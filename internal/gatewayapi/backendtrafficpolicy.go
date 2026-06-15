@@ -1634,6 +1634,23 @@ func backendPolicyKeyFromMetadata(md *ir.ResourceMetadata) backendPolicyKey {
 	return backendPolicyKey{Kind: md.Kind, Namespace: md.Namespace, Name: md.Name}
 }
 
+// sharedBackendClusterName returns a stable Envoy cluster name shared by every route rule that
+// targets the same backend (and port). When MergeBackends is enabled, routes whose backend is
+// owned by a backend-targeted BackendTrafficPolicy receive identical, backend-derived traffic
+// features (see applyTrafficFeaturesToBackend), so rewriting their RouteDestination.Name to this
+// shared name lets the xDS layer's addXdsCluster dedup collapse them into a single CDS cluster.
+//
+// The name includes the metadata SectionName (the backend port for Service/ServiceImport refs)
+// because routes to the same Service on different ports resolve to different upstream endpoints
+// and must not share a cluster. backendPolicyKey deliberately omits the port (a BTP targets a
+// backend by name, across all ports), so we cannot reuse it verbatim here.
+func sharedBackendClusterName(md *ir.ResourceMetadata) string {
+	if md.SectionName != "" {
+		return fmt.Sprintf("backend/%s/%s/%s/%s", md.Kind, md.Namespace, md.Name, md.SectionName)
+	}
+	return fmt.Sprintf("backend/%s/%s/%s", md.Kind, md.Namespace, md.Name)
+}
+
 // buildRouteRuleBackendPolicyMap builds a map from route key → backend BTP by walking
 // the IR once. This avoids repeated IR scans when looking up backend BTPs for routes
 // during the route merge phase.
@@ -1979,6 +1996,17 @@ func (t *Translator) applyTrafficFeaturesToBackend(
 			setIfNil(&r.Traffic.DNS, tf.DNS)
 
 			appendTrafficPolicyMetadata(r.Metadata, policy)
+
+			// Collapse the cluster: routes reaching this point target the same backend and now
+			// carry identical, backend-derived traffic features, so they can share one Envoy
+			// cluster. Rewriting the destination name to a backend-scoped name lets addXdsCluster
+			// dedup fold them into a single CDS resource ("cluster deduplication for routes
+			// sharing the same backend"). Single-backend is guaranteed here: multi-backend rules
+			// are rejected above as conflicts. Routes carrying their own route-level Traffic or
+			// UseClientProtocol were skipped above and keep their dedicated cluster.
+			if len(r.Destination.Settings) == 1 && r.Destination.Settings[0].Metadata != nil {
+				r.Destination.Name = sharedBackendClusterName(r.Destination.Settings[0].Metadata)
+			}
 		}
 	}
 
