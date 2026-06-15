@@ -283,7 +283,7 @@ xdsIR:
             kind: HTTPRoute
             name: httproute-1
             namespace: default
-          name: httproute/default/httproute-1/rule/0
+          name: backend/Service/default/service-1/8080
           settings:
           - addressType: IP
             endpoints:
