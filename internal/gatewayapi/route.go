@@ -324,7 +324,7 @@ func (t *Translator) processHTTPRouteRules(httpRoute *HTTPRouteContext, parentRe
 			backendRefNames[i] = fmt.Sprintf("%s/%s", backendNamespace, rule.BackendRefs[i].Name)
 
 			backendCluster := t.getOrCreateBackendCluster(gwIR, backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
-			backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Backend: backendCluster, Weight: ds.Weight})
+			backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Weight: ds.Weight})
 		}
 
 		// backendWeights is computed from the rule's own backendRefs, independent of whichever
@@ -510,7 +510,7 @@ func registerBackendCluster(gwIR *ir.Xds, bc *ir.BackendCluster, weight *uint32,
 	if gwIR != nil {
 		gwIR.Backends = append(gwIR.Backends, bc)
 	}
-	return &ir.BackendClusterRef{Name: bc.Name, Backend: bc, Weight: weight, Filters: filters}
+	return &ir.BackendClusterRef{Name: bc.Name, Weight: weight, Filters: filters}
 }
 
 // resolveBackendClusterName decides whether the backend identified by identity participates in
@@ -1176,7 +1176,7 @@ func (t *Translator) processGRPCRouteRules(grpcRoute *GRPCRouteContext, parentRe
 			backendRefNames[i] = fmt.Sprintf("%s/%s", backendNamespace, rule.BackendRefs[i].Name)
 
 			backendCluster := t.getOrCreateBackendCluster(gwIR, backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
-			backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Backend: backendCluster, Weight: ds.Weight})
+			backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Weight: ds.Weight})
 		}
 
 		// backendWeights is computed from the rule's own backendRefs, independent of whichever
@@ -1564,7 +1564,7 @@ func (t *Translator) processTLSRouteParentRefs(tlsRoute *TLSRouteContext, resour
 				if ds.Weight != nil && *ds.Weight > 0 {
 					destSettings = append(destSettings, ds)
 					backendCluster := t.getOrCreateBackendCluster(gwIR, backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
-					backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Backend: backendCluster, Weight: ds.Weight})
+					backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Weight: ds.Weight})
 				}
 			}
 
@@ -1757,7 +1757,7 @@ func (t *Translator) processUDPRouteParentRefs(udpRoute *UDPRouteContext, resour
 			if ds.Weight != nil && *ds.Weight > 0 {
 				destSettings = append(destSettings, ds)
 				backendCluster := t.getOrCreateBackendCluster(gwIR, backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
-				backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Backend: backendCluster, Weight: ds.Weight})
+				backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Weight: ds.Weight})
 			}
 		}
 
@@ -1920,7 +1920,7 @@ func (t *Translator) processTCPRouteParentRefs(tcpRoute *TCPRouteContext, resour
 			if ds.Weight != nil && *ds.Weight > 0 {
 				destSettings = append(destSettings, ds)
 				backendCluster := t.getOrCreateBackendCluster(gwIR, backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
-				backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Backend: backendCluster, Weight: ds.Weight})
+				backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Weight: ds.Weight})
 			}
 		}
 
