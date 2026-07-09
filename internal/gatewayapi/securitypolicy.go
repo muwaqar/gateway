@@ -938,6 +938,7 @@ func (t *Translator) translateSecurityPolicyForRoute(
 				owners,
 				resources,
 				gtwCtx,
+				xdsIR,
 			); extAuthErr != nil {
 				extAuthErr = perr.WithMessage(extAuthErr, "ExtAuth")
 				errs = errors.Join(errs, extAuthErr)
@@ -951,6 +952,7 @@ func (t *Translator) translateSecurityPolicyForRoute(
 				owners,
 				resources,
 				gtwCtx,
+				xdsIR,
 			); err != nil {
 				err = perr.WithMessage(err, "OIDC")
 				errs = errors.Join(errs, err)
@@ -965,6 +967,7 @@ func (t *Translator) translateSecurityPolicyForRoute(
 				owners,
 				resources,
 				gtwCtx,
+				xdsIR,
 			); err != nil {
 				err = perr.WithMessage(err, "JWT")
 				errs = errors.Join(errs, err)
@@ -1118,6 +1121,7 @@ func (t *Translator) translateSecurityPolicyForGateway(
 			noOwners,
 			resources,
 			gtwCtx,
+			xdsIR,
 		); err != nil {
 			err = perr.WithMessage(err, "JWT")
 			errs = errors.Join(errs, err)
@@ -1130,6 +1134,7 @@ func (t *Translator) translateSecurityPolicyForGateway(
 			noOwners,
 			resources,
 			gtwCtx,
+			xdsIR,
 		); err != nil {
 			err = perr.WithMessage(err, "OIDC")
 			errs = errors.Join(errs, err)
@@ -1172,6 +1177,7 @@ func (t *Translator) translateSecurityPolicyForGateway(
 			noOwners,
 			resources,
 			gtwCtx,
+			xdsIR,
 		); extAuthErr != nil {
 			extAuthErr = perr.WithMessage(extAuthErr, "ExtAuth")
 			errs = errors.Join(errs, extAuthErr)
@@ -1349,6 +1355,7 @@ func (t *Translator) buildJWT(
 	owners *securityPolicyOwners,
 	resources *resource.Resources,
 	gtwCtx *GatewayContext,
+	xdsIR resource.XdsIRMap,
 ) (*ir.JWT, error) {
 	if err := validateJWTProvider(policy.Spec.JWT.Providers); err != nil {
 		return nil, err
@@ -1366,7 +1373,7 @@ func (t *Translator) buildJWT(
 			ExtractFrom:    p.ExtractFrom,
 		}
 		if p.RemoteJWKS != nil {
-			remoteJWKS, err := t.buildRemoteJWKS(jwtOwnerPolicy, p.RemoteJWKS, i, resources, gtwCtx)
+			remoteJWKS, err := t.buildRemoteJWKS(jwtOwnerPolicy, p.RemoteJWKS, i, resources, gtwCtx, xdsIR)
 			if err != nil {
 				return nil, err
 			}
@@ -1477,6 +1484,7 @@ func (t *Translator) buildRemoteJWKS(
 	index int,
 	resources *resource.Resources,
 	gtwCtx *GatewayContext,
+	xdsIR resource.XdsIRMap,
 ) (*ir.RemoteJWKS, error) {
 	var (
 		protocol      ir.AppProtocol
@@ -1499,7 +1507,7 @@ func (t *Translator) buildRemoteJWKS(
 
 	if len(remoteJWKS.BackendRefs) > 0 {
 		if rd, err = t.translateExtServiceBackendRefs(
-			policy, remoteJWKS.BackendRefs, protocol, resources, gtwCtx, "jwt", index); err != nil {
+			policy, remoteJWKS.BackendRefs, protocol, resources, gtwCtx, "jwt", index, xdsIR); err != nil {
 			return nil, err
 		}
 	}
@@ -1566,6 +1574,7 @@ func (t *Translator) buildOIDC(
 	owners *securityPolicyOwners,
 	resources *resource.Resources,
 	gtwCtx *GatewayContext,
+	xdsIR resource.XdsIRMap,
 ) (*ir.OIDC, error) {
 	var (
 		oidc                   = policy.Spec.OIDC
@@ -1582,7 +1591,7 @@ func (t *Translator) buildOIDC(
 		err                    error
 	)
 
-	if provider, err = t.buildOIDCProvider(policy, owners, resources, gtwCtx); err != nil {
+	if provider, err = t.buildOIDCProvider(policy, owners, resources, gtwCtx, xdsIR); err != nil {
 		return nil, err
 	}
 
@@ -1731,6 +1740,7 @@ func (t *Translator) buildOIDCProvider(
 	owners *securityPolicyOwners,
 	resources *resource.Resources,
 	gtwCtx *GatewayContext,
+	xdsIR resource.XdsIRMap,
 ) (*ir.OIDCProvider, error) {
 	var (
 		provider              = policy.Spec.OIDC.Provider
@@ -1764,7 +1774,7 @@ func (t *Translator) buildOIDCProvider(
 	oidcProviderOwner := policyOwnerOr(owners.oidcProviderBackendRefs, policy)
 	if len(provider.BackendRefs) > 0 {
 		if rd, err = t.translateExtServiceBackendRefs(
-			oidcProviderOwner, provider.BackendRefs, protocol, resources, gtwCtx, "oidc", 0); err != nil {
+			oidcProviderOwner, provider.BackendRefs, protocol, resources, gtwCtx, "oidc", 0, xdsIR); err != nil {
 			return nil, err
 		}
 	}
@@ -2191,6 +2201,7 @@ func (t *Translator) buildExtAuth(
 	owners *securityPolicyOwners,
 	resources *resource.Resources,
 	gtwCtx *GatewayContext,
+	xdsIR resource.XdsIRMap,
 ) (*ir.ExtAuth, error) {
 	var (
 		http              = policy.Spec.ExtAuth.HTTP
@@ -2251,7 +2262,7 @@ func (t *Translator) buildExtAuth(
 	}
 
 	if rd, err = t.translateExtServiceBackendRefs(
-		backendRefsOwnerPolicy, backendRefs, protocol, resources, gtwCtx, "extauth", 0); err != nil {
+		backendRefsOwnerPolicy, backendRefs, protocol, resources, gtwCtx, "extauth", 0, xdsIR); err != nil {
 		return nil, err
 	}
 
