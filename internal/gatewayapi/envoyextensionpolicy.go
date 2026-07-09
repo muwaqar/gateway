@@ -853,7 +853,7 @@ func (t *Translator) buildExtProc(
 		err       error
 	)
 
-	if rd, err = t.translateExtServiceBackendRefs(policy, extProc.BackendRefs, ir.GRPC, resources, gtwCtx, "extproc", extProcIdx, xdsIR); err != nil {
+	if rd, _, err = t.translateExtServiceBackendRefs(policy, extProc.BackendRefs, ir.GRPC, resources, gtwCtx, "extproc", extProcIdx, xdsIR); err != nil {
 		return nil, err
 	}
 
