@@ -115,7 +115,7 @@ func (t *Translator) processHTTPRouteParentRefs(httpRoute *HTTPRouteContext, res
 		// Need to compute Route rules within the parentRef loop because
 		// any conditions that come out of it have to go on each RouteParentStatus,
 		// not on the Route as a whole.
-		routeRoutes, errs, unacceptedRules := t.processHTTPRouteRules(httpRoute, parentRef, resources)
+		routeRoutes, errs, unacceptedRules := t.processHTTPRouteRules(httpRoute, parentRef, resources, xdsIR)
 		if len(errs) > 0 {
 			routeStatus := GetRouteStatus(httpRoute)
 			// errs are already grouped by condition type in TypedErrorCollector
@@ -219,7 +219,7 @@ func formatDroppedRuleMessage(unacceptedRules []int, err status.Error) string {
 	return fmt.Sprintf("Dropped Rule(s) %v: %s", unacceptedRules, status.Error2ConditionMsg(err))
 }
 
-func (t *Translator) processHTTPRouteRules(httpRoute *HTTPRouteContext, parentRef *RouteParentContext, resources *resource.Resources) ([]*ir.HTTPRoute, []status.Error, []int) {
+func (t *Translator) processHTTPRouteRules(httpRoute *HTTPRouteContext, parentRef *RouteParentContext, resources *resource.Resources, xdsIR resource.XdsIRMap) ([]*ir.HTTPRoute, []status.Error, []int) {
 	var (
 		irRoutes       []*ir.HTTPRoute
 		errorCollector = &status.TypedErrorCollector{}
@@ -274,6 +274,7 @@ func (t *Translator) processHTTPRouteRules(httpRoute *HTTPRouteContext, parentRe
 		backendCustomRefs := make([]*ir.UnstructuredRef, 0, len(rule.BackendRefs))
 
 		gatewayCtx, btpRoutingType := t.resolveRoutingContext(httpRoute, parentRef, rule.Name)
+		gwIR := t.gatewayXdsIR(gatewayCtx, xdsIR)
 
 		for i := range rule.BackendRefs {
 			backendNamespace := NamespaceDerefOr(rule.BackendRefs[i].Namespace, httpRoute.GetNamespace())
@@ -322,8 +323,8 @@ func (t *Translator) processHTTPRouteRules(httpRoute *HTTPRouteContext, parentRe
 
 			backendRefNames[i] = fmt.Sprintf("%s/%s", backendNamespace, rule.BackendRefs[i].Name)
 
-			backendCluster := t.getOrCreateBackendCluster(backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
-			backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Backend: backendCluster, Weight: ds.Weight})
+			backendCluster := t.getOrCreateBackendCluster(gwIR, backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
+			backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Backend: backendCluster, Weight: ds.Weight})
 		}
 
 		// backendWeights is computed from the rule's own backendRefs, independent of whichever
@@ -491,6 +492,15 @@ func (t *Translator) resolveRoutingContext(
 	return gatewayCtx, btpRoutingType
 }
 
+// gatewayXdsIR resolves the *ir.Xds for gatewayCtx's gateway from xdsIR. Returns nil if
+// gatewayCtx is nil or the gateway has no corresponding entry (e.g. a failed gateway).
+func (t *Translator) gatewayXdsIR(gatewayCtx *GatewayContext, xdsIR resource.XdsIRMap) *ir.Xds {
+	if gatewayCtx == nil {
+		return nil
+	}
+	return xdsIR[t.getIRKey(gatewayCtx.Gateway)]
+}
+
 // resolveBackendClusterName decides whether the backend identified by identity participates in
 // cluster deduplication, and resolves the find-or-create key and target cluster name accordingly.
 //
@@ -547,6 +557,7 @@ func backendClusterSettingName(destName string, backendIdx int, backendClusterNa
 // key), ds is appended so the cluster accumulates every backendRef's setting, matching today's
 // one-cluster-per-rule behavior.
 func (t *Translator) getOrCreateBackendCluster(
+	gwIR *ir.Xds,
 	key BackendClusterKey,
 	clusterName string,
 	merge bool,
@@ -566,6 +577,9 @@ func (t *Translator) getOrCreateBackendCluster(
 		Metadata: metadata,
 	}
 	t.BackendClusterMap[key] = backendCluster
+	if gwIR != nil {
+		gwIR.Backends = append(gwIR.Backends, backendCluster)
+	}
 	return backendCluster
 }
 
@@ -956,7 +970,7 @@ func (t *Translator) processGRPCRouteParentRefs(grpcRoute *GRPCRouteContext, res
 		// Need to compute Route rules within the parentRef loop because
 		// any conditions that come out of it have to go on each RouteParentStatus,
 		// not on the Route as a whole.
-		routeRoutes, errs, unacceptedRules := t.processGRPCRouteRules(grpcRoute, parentRef, resources)
+		routeRoutes, errs, unacceptedRules := t.processGRPCRouteRules(grpcRoute, parentRef, resources, xdsIR)
 		if len(errs) > 0 {
 			routeStatus := GetRouteStatus(grpcRoute)
 			// errs are already grouped by condition type in TypedErrorCollector
@@ -1056,7 +1070,7 @@ func (t *Translator) processGRPCRouteParentRefs(grpcRoute *GRPCRouteContext, res
 	}
 }
 
-func (t *Translator) processGRPCRouteRules(grpcRoute *GRPCRouteContext, parentRef *RouteParentContext, resources *resource.Resources) ([]*ir.HTTPRoute, []status.Error, []int) {
+func (t *Translator) processGRPCRouteRules(grpcRoute *GRPCRouteContext, parentRef *RouteParentContext, resources *resource.Resources, xdsIR resource.XdsIRMap) ([]*ir.HTTPRoute, []status.Error, []int) {
 	var (
 		irRoutes       []*ir.HTTPRoute
 		errorCollector = &status.TypedErrorCollector{}
@@ -1109,6 +1123,7 @@ func (t *Translator) processGRPCRouteRules(grpcRoute *GRPCRouteContext, parentRe
 		routeRuleMetadata := buildResourceMetadata(grpcRoute, rule.Name)
 
 		gatewayCtx, btpRoutingType := t.resolveRoutingContext(grpcRoute, parentRef, rule.Name)
+		gwIR := t.gatewayXdsIR(gatewayCtx, xdsIR)
 
 		backendRefNames := make([]string, len(rule.BackendRefs))
 		for i := range rule.BackendRefs {
@@ -1148,8 +1163,8 @@ func (t *Translator) processGRPCRouteRules(grpcRoute *GRPCRouteContext, parentRe
 			allDs = append(allDs, ds)
 			backendRefNames[i] = fmt.Sprintf("%s/%s", backendNamespace, rule.BackendRefs[i].Name)
 
-			backendCluster := t.getOrCreateBackendCluster(backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
-			backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Backend: backendCluster, Weight: ds.Weight})
+			backendCluster := t.getOrCreateBackendCluster(gwIR, backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
+			backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Backend: backendCluster, Weight: ds.Weight})
 		}
 
 		// backendWeights is computed from the rule's own backendRefs, independent of whichever
@@ -1519,6 +1534,7 @@ func (t *Translator) processTLSRouteParentRefs(tlsRoute *TLSRouteContext, resour
 		// compute backends
 		for _, rule := range tlsRoute.Spec.Rules {
 			gatewayCtx, btpRoutingType := t.resolveRoutingContext(tlsRoute, parentRef, rule.Name)
+			gwIR := t.gatewayXdsIR(gatewayCtx, xdsIR)
 			for i := range rule.BackendRefs {
 				backendNamespace := NamespaceDerefOr(rule.BackendRefs[i].Namespace, tlsRoute.GetNamespace())
 				backendClusterIdentity := backendClusterIdentity(rule.BackendRefs[i].BackendObjectReference, backendNamespace)
@@ -1535,8 +1551,8 @@ func (t *Translator) processTLSRouteParentRefs(tlsRoute *TLSRouteContext, resour
 				// skip backendRefs with weight 0 as they do not affect the traffic distribution
 				if ds.Weight != nil && *ds.Weight > 0 {
 					destSettings = append(destSettings, ds)
-					backendCluster := t.getOrCreateBackendCluster(backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
-					backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Backend: backendCluster, Weight: ds.Weight})
+					backendCluster := t.getOrCreateBackendCluster(gwIR, backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
+					backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Backend: backendCluster, Weight: ds.Weight})
 				}
 			}
 
@@ -1710,6 +1726,7 @@ func (t *Translator) processUDPRouteParentRefs(udpRoute *UDPRouteContext, resour
 		)
 
 		gatewayCtx, btpRoutingType := t.resolveRoutingContext(udpRoute, parentRef, udpRoute.Spec.Rules[0].Name)
+		gwIR := t.gatewayXdsIR(gatewayCtx, xdsIR)
 		for i := range udpRoute.Spec.Rules[0].BackendRefs {
 			backendNamespace := NamespaceDerefOr(udpRoute.Spec.Rules[0].BackendRefs[i].Namespace, udpRoute.GetNamespace())
 			backendClusterIdentity := backendClusterIdentity(udpRoute.Spec.Rules[0].BackendRefs[i].BackendObjectReference, backendNamespace)
@@ -1727,8 +1744,8 @@ func (t *Translator) processUDPRouteParentRefs(udpRoute *UDPRouteContext, resour
 			// skip backendRefs with weight 0 as they do not affect the traffic distribution
 			if ds.Weight != nil && *ds.Weight > 0 {
 				destSettings = append(destSettings, ds)
-				backendCluster := t.getOrCreateBackendCluster(backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
-				backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Backend: backendCluster, Weight: ds.Weight})
+				backendCluster := t.getOrCreateBackendCluster(gwIR, backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
+				backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Backend: backendCluster, Weight: ds.Weight})
 			}
 		}
 
@@ -1873,6 +1890,7 @@ func (t *Translator) processTCPRouteParentRefs(tcpRoute *TCPRouteContext, resour
 		)
 
 		gatewayCtx, btpRoutingType := t.resolveRoutingContext(tcpRoute, parentRef, tcpRoute.Spec.Rules[0].Name)
+		gwIR := t.gatewayXdsIR(gatewayCtx, xdsIR)
 		for i := range tcpRoute.Spec.Rules[0].BackendRefs {
 			backendNamespace := NamespaceDerefOr(tcpRoute.Spec.Rules[0].BackendRefs[i].Namespace, tcpRoute.GetNamespace())
 			backendClusterIdentity := backendClusterIdentity(tcpRoute.Spec.Rules[0].BackendRefs[i].BackendObjectReference, backendNamespace)
@@ -1889,8 +1907,8 @@ func (t *Translator) processTCPRouteParentRefs(tcpRoute *TCPRouteContext, resour
 			// skip backendRefs with weight 0 as they do not affect the traffic distribution
 			if ds.Weight != nil && *ds.Weight > 0 {
 				destSettings = append(destSettings, ds)
-				backendCluster := t.getOrCreateBackendCluster(backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
-				backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Backend: backendCluster, Weight: ds.Weight})
+				backendCluster := t.getOrCreateBackendCluster(gwIR, backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
+				backendClusterRefs = append(backendClusterRefs, &ir.BackendClusterRef{Name: backendCluster.Name, Backend: backendCluster, Weight: ds.Weight})
 			}
 		}
 
