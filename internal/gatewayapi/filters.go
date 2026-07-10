@@ -1081,7 +1081,6 @@ func (t *Translator) processRequestMirrorFilter(
 	gwIR := t.gatewayXdsIR(gatewayCtx, xdsIR)
 	routeDst := &ir.RouteDestination{
 		Name:               destName,
-		Settings:           []*ir.DestinationSetting{ds},
 		BackendClusterRefs: []*ir.BackendClusterRef{registerBackendCluster(gwIR, bc)},
 	}
 
