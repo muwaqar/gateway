@@ -1621,7 +1621,6 @@ func (t *Translator) processTLSRouteParentRefs(tlsRoute *TLSRouteContext, resour
 		// any conditions that come out of it have to go on each RouteParentStatus,
 		// not on the Route as a whole.
 		var (
-			destSettings       []*ir.DestinationSetting
 			backendClusterRefs backendClusterRefBuilder
 			resolveErrs        = &status.MultiStatusError{}
 			destName           = irRouteDestinationName(tlsRoute, -1 /*rule index*/)
@@ -1648,7 +1647,6 @@ func (t *Translator) processTLSRouteParentRefs(tlsRoute *TLSRouteContext, resour
 				}
 				// skip backendRefs with weight 0 as they do not affect the traffic distribution
 				if ds.Weight != nil && *ds.Weight > 0 {
-					destSettings = append(destSettings, ds)
 					backendCluster := t.getOrCreateBackendCluster(gwIR, backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
 					backendClusterRefs.add(merge, backendCluster, ds.Weight)
 				}
@@ -1815,7 +1813,6 @@ func (t *Translator) processUDPRouteParentRefs(udpRoute *UDPRouteContext, resour
 		// any conditions that come out of it have to go on each RouteParentStatus,
 		// not on the Route as a whole.
 		var (
-			destSettings       []*ir.DestinationSetting
 			backendClusterRefs backendClusterRefBuilder
 			resolveErrs        = &status.MultiStatusError{}
 			destName           = irRouteDestinationName(udpRoute, -1 /*rule index*/)
@@ -1841,7 +1838,6 @@ func (t *Translator) processUDPRouteParentRefs(udpRoute *UDPRouteContext, resour
 
 			// skip backendRefs with weight 0 as they do not affect the traffic distribution
 			if ds.Weight != nil && *ds.Weight > 0 {
-				destSettings = append(destSettings, ds)
 				backendCluster := t.getOrCreateBackendCluster(gwIR, backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
 				backendClusterRefs.add(merge, backendCluster, ds.Weight)
 			}
@@ -1979,7 +1975,6 @@ func (t *Translator) processTCPRouteParentRefs(tcpRoute *TCPRouteContext, resour
 		// any conditions that come out of it have to go on each RouteParentStatus,
 		// not on the Route as a whole.
 		var (
-			destSettings       []*ir.DestinationSetting
 			backendClusterRefs backendClusterRefBuilder
 			resolveErrs        = &status.MultiStatusError{}
 			destName           = irRouteDestinationName(tcpRoute, -1 /*rule index*/)
@@ -2004,7 +1999,6 @@ func (t *Translator) processTCPRouteParentRefs(tcpRoute *TCPRouteContext, resour
 			}
 			// skip backendRefs with weight 0 as they do not affect the traffic distribution
 			if ds.Weight != nil && *ds.Weight > 0 {
-				destSettings = append(destSettings, ds)
 				backendCluster := t.getOrCreateBackendCluster(gwIR, backendClusterKey, backendClusterName, merge, ds, routeRuleMetadata)
 				backendClusterRefs.add(merge, backendCluster, ds.Weight)
 			}
