@@ -59,4 +59,3 @@ backendTrafficPolicies:
           kind: HTTPRoute
           name: http-route-1
           sectionName: rule-2
-      routingType: Endpoint

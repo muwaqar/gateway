@@ -1177,8 +1177,6 @@ func TestBTPRoutingTypeIndex(t *testing.T) {
 			expected:     &serviceRouting,
 		},
 		{
-			// #9541: route-targeted BTP sets neither RoutingType nor MergeType, so it must not
-			// inherit the gateway's RoutingType.
 			name: "BTP with nil RoutingType and nil MergeType does not inherit gateway's",
 			btps: []*egv1a1.BackendTrafficPolicy{
 				{

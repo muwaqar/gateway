@@ -5,7 +5,6 @@ backendTrafficPolicies:
     name: btp-rule-2-no-mergetype
     namespace: default
   spec:
-    routingType: Endpoint
     targetRefs:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute

@@ -6,7 +6,6 @@ backendTrafficPolicies:
     namespace: default
   spec:
     mergeType: StrategicMerge
-    routingType: Endpoint
     targetRefs:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute

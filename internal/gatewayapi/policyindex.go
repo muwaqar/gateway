@@ -18,65 +18,69 @@ type policyTargetKey struct {
 	Kind, Namespace, Name, SectionName string
 }
 
-// policyPrecedenceEntry pairs a route-rule/route-level policy's value with its own MergeType, so
+// policyIndexEntry pairs a route-rule/route-level policy's value with its own MergeType, so
 // resolution can decide whether to keep going toward a broader parent.
-type policyPrecedenceEntry[T comparable] struct {
+type policyIndexEntry[T comparable] struct {
 	value     T
 	mergeType *egv1a1.MergeType
 }
 
-// policyPrecedenceListenerEntry pairs a listener-level policy's value with hasValue, since a
+// policyIndexListenerEntry pairs a listener-level policy's value with hasValue, since a
 // policy that doesn't address a field must still transparently fall through to gateway for it.
-type policyPrecedenceListenerEntry[T comparable] struct {
+type policyIndexListenerEntry[T comparable] struct {
 	value    T
 	hasValue bool
 }
 
-// policyPrecedenceIndex resolves a route-rule/route/listener/gateway target through the same
-// attachment precedence a policy itself uses, including MergeType-driven inheritance.
-type policyPrecedenceIndex[T comparable] struct {
-	routeRuleLevel map[policyTargetKey]policyPrecedenceEntry[T]
-	routeLevel     map[policyTargetKey]policyPrecedenceEntry[T]
-	listenerLevel  map[policyTargetKey]policyPrecedenceListenerEntry[T]
+// policyIndex resolves a route-rule/route/listener/gateway target through the same
+// attachment order a policy itself uses, including MergeType-driven inheritance.
+type policyIndex[T comparable] struct {
+	routeRuleLevel map[policyTargetKey]policyIndexEntry[T]
+	routeLevel     map[policyTargetKey]policyIndexEntry[T]
+	listenerLevel  map[policyTargetKey]policyIndexListenerEntry[T]
 	gatewayLevel   map[policyTargetKey]T
 }
 
-// newPolicyPrecedenceIndex allocates a policyPrecedenceIndex's maps.
-func newPolicyPrecedenceIndex[T comparable]() *policyPrecedenceIndex[T] {
-	return &policyPrecedenceIndex[T]{
-		routeRuleLevel: make(map[policyTargetKey]policyPrecedenceEntry[T]),
-		routeLevel:     make(map[policyTargetKey]policyPrecedenceEntry[T]),
-		listenerLevel:  make(map[policyTargetKey]policyPrecedenceListenerEntry[T]),
+// newPolicyIndex allocates a policyIndex's maps.
+func newPolicyIndex[T comparable]() *policyIndex[T] {
+	return &policyIndex[T]{
+		routeRuleLevel: make(map[policyTargetKey]policyIndexEntry[T]),
+		routeLevel:     make(map[policyTargetKey]policyIndexEntry[T]),
+		listenerLevel:  make(map[policyTargetKey]policyIndexListenerEntry[T]),
 		gatewayLevel:   make(map[policyTargetKey]T),
 	}
 }
 
 // setRouteRuleLevel records a route-rule target's first-registered entry; later calls for the
 // same key are ignored.
-func (idx *policyPrecedenceIndex[T]) setRouteRuleLevel(key policyTargetKey, value T, mergeType *egv1a1.MergeType) {
+func (idx *policyIndex[T]) setRouteRuleLevel(key policyTargetKey, value T, mergeType *egv1a1.MergeType) {
 	if _, exists := idx.routeRuleLevel[key]; !exists {
-		idx.routeRuleLevel[key] = policyPrecedenceEntry[T]{value: value, mergeType: mergeType}
+		idx.routeRuleLevel[key] = policyIndexEntry[T]{value: value, mergeType: mergeType}
 	}
 }
 
 // setRouteLevel is setRouteRuleLevel's counterpart for a route (not route-rule) target.
-func (idx *policyPrecedenceIndex[T]) setRouteLevel(key policyTargetKey, value T, mergeType *egv1a1.MergeType) {
+func (idx *policyIndex[T]) setRouteLevel(key policyTargetKey, value T, mergeType *egv1a1.MergeType) {
 	if _, exists := idx.routeLevel[key]; !exists {
-		idx.routeLevel[key] = policyPrecedenceEntry[T]{value: value, mergeType: mergeType}
+		idx.routeLevel[key] = policyIndexEntry[T]{value: value, mergeType: mergeType}
 	}
 }
 
-// setListenerLevel claims a listener key's first-registered slot unconditionally; hasValue alone
-// decides whether Lookup uses the value directly or falls through to gateway.
-func (idx *policyPrecedenceIndex[T]) setListenerLevel(key policyTargetKey, value T, hasValue bool) {
+// setListenerLevel claims a listener key's first-registered slot unconditionally; hasValue decides
+// whether Lookup uses value directly or falls through to gateway. This function needs to know
+// which of three states value is in: not populated, populated with T's zero/default value, or
+// populated with a non-default value - but the first two look identical by inspecting value alone.
+// An Option[T] (Some(T) vs. None) would separate these for free; Go generics have no built-in
+// optional, so hasValue is the caller-supplied Some/None signal instead.
+func (idx *policyIndex[T]) setListenerLevel(key policyTargetKey, value T, hasValue bool) {
 	if _, exists := idx.listenerLevel[key]; !exists {
-		idx.listenerLevel[key] = policyPrecedenceListenerEntry[T]{value: value, hasValue: hasValue}
+		idx.listenerLevel[key] = policyIndexListenerEntry[T]{value: value, hasValue: hasValue}
 	}
 }
 
 // setGatewayLevel records a gateway target's first-registered value, always unconditional: gateway
 // is the last level, so there's no parent an unset value could ever wrongly block.
-func (idx *policyPrecedenceIndex[T]) setGatewayLevel(key policyTargetKey, value T) {
+func (idx *policyIndex[T]) setGatewayLevel(key policyTargetKey, value T) {
 	if _, exists := idx.gatewayLevel[key]; !exists {
 		idx.gatewayLevel[key] = value
 	}
@@ -84,7 +88,7 @@ func (idx *policyPrecedenceIndex[T]) setGatewayLevel(key policyTargetKey, value 
 
 // Lookup resolves the effective value for a route-rule/route/listener/gateway target. value alone
 // is always correct; pinned reports whether a route-rule/route entry supplied it directly.
-func (idx *policyPrecedenceIndex[T]) Lookup(
+func (idx *policyIndex[T]) Lookup(
 	routeKind gwapiv1.Kind,
 	routeNN types.NamespacedName,
 	gatewayNN types.NamespacedName,
@@ -112,7 +116,7 @@ func (idx *policyPrecedenceIndex[T]) Lookup(
 
 // LookupListenerOrGateway resolves just the listener/gateway levels, for callers with no
 // route-rule/route context of their own. hasValue, not presence or zero-ness, decides fallthrough.
-func (idx *policyPrecedenceIndex[T]) LookupListenerOrGateway(gatewayNN types.NamespacedName, listenerName *gwapiv1.SectionName) T {
+func (idx *policyIndex[T]) LookupListenerOrGateway(gatewayNN types.NamespacedName, listenerName *gwapiv1.SectionName) T {
 	var zero T
 	if idx == nil {
 		return zero
@@ -127,7 +131,7 @@ func (idx *policyPrecedenceIndex[T]) LookupListenerOrGateway(gatewayNN types.Nam
 }
 
 // LookupGateway resolves just the gateway-level value, for callers with no route/listener context.
-func (idx *policyPrecedenceIndex[T]) LookupGateway(gatewayNN types.NamespacedName) T {
+func (idx *policyIndex[T]) LookupGateway(gatewayNN types.NamespacedName) T {
 	var zero T
 	if idx == nil {
 		return zero
@@ -138,7 +142,7 @@ func (idx *policyPrecedenceIndex[T]) LookupGateway(gatewayNN types.NamespacedNam
 
 // LookupOwnerListenerLevel is LookupListenerOrGateway's counterpart for an owner kind other than
 // Gateway (e.g. ListenerSet), with no gateway/listenerSet-wide fallback.
-func (idx *policyPrecedenceIndex[T]) LookupOwnerListenerLevel(ownerKind string, ownerNN types.NamespacedName, listenerName gwapiv1.SectionName) (T, bool) {
+func (idx *policyIndex[T]) LookupOwnerListenerLevel(ownerKind string, ownerNN types.NamespacedName, listenerName gwapiv1.SectionName) (T, bool) {
 	var zero T
 	if idx == nil {
 		return zero, false
@@ -151,7 +155,7 @@ func (idx *policyPrecedenceIndex[T]) LookupOwnerListenerLevel(ownerKind string, 
 }
 
 // LookupOwnerLevel is LookupGateway's counterpart for an owner kind other than Gateway.
-func (idx *policyPrecedenceIndex[T]) LookupOwnerLevel(ownerKind string, ownerNN types.NamespacedName) T {
+func (idx *policyIndex[T]) LookupOwnerLevel(ownerKind string, ownerNN types.NamespacedName) T {
 	var zero T
 	if idx == nil {
 		return zero
@@ -162,7 +166,7 @@ func (idx *policyPrecedenceIndex[T]) LookupOwnerLevel(ownerKind string, ownerNN 
 
 // resolveEntry reports pinned: true whenever entry itself supplies the final answer - an explicit
 // value, or an unset value with MergeType nil - and false only when it falls through to a parent.
-func (idx *policyPrecedenceIndex[T]) resolveEntry(entry policyPrecedenceEntry[T], gatewayNN types.NamespacedName, listenerName *gwapiv1.SectionName) (T, bool) {
+func (idx *policyIndex[T]) resolveEntry(entry policyIndexEntry[T], gatewayNN types.NamespacedName, listenerName *gwapiv1.SectionName) (T, bool) {
 	var zero T
 	if entry.value != zero {
 		return entry.value, true

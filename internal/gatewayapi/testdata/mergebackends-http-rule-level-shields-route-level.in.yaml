@@ -71,4 +71,3 @@ backendTrafficPolicies:
           name: http-route-2
           sectionName: rule-a
       mergeType: StrategicMerge
-      routingType: Endpoint

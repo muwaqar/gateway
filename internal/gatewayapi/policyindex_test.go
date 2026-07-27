@@ -16,7 +16,7 @@ import (
 	"github.com/envoyproxy/gateway/internal/gatewayapi/resource"
 )
 
-func TestPolicyPrecedenceIndexLookup(t *testing.T) {
+func TestPolicyIndexLookup(t *testing.T) {
 	routeKind := gwapiv1.Kind("HTTPRoute")
 	routeNN := types.NamespacedName{Namespace: "default", Name: "route-1"}
 	gatewayNN := types.NamespacedName{Namespace: "default", Name: "gateway-1"}
@@ -32,9 +32,9 @@ func TestPolicyPrecedenceIndexLookup(t *testing.T) {
 	cases := []struct {
 		name          string
 		nilIndex      bool
-		ruleEntry     *policyPrecedenceEntry[bool]
-		routeEntry    *policyPrecedenceEntry[bool]
-		listenerEntry *policyPrecedenceListenerEntry[bool]
+		ruleEntry     *policyIndexEntry[bool]
+		routeEntry    *policyIndexEntry[bool]
+		listenerEntry *policyIndexListenerEntry[bool]
 		gatewayValue  bool
 		omitRuleName  bool // Lookup called with routeRuleName: nil
 		omitListener  bool // Lookup called with listenerName: nil
@@ -45,50 +45,50 @@ func TestPolicyPrecedenceIndexLookup(t *testing.T) {
 		{name: "no entry anywhere falls through to zero value, not pinned"},
 		{
 			name:      "rule-level non-zero value wins outright and is pinned, regardless of MergeType",
-			ruleEntry: &policyPrecedenceEntry[bool]{value: true, mergeType: &strategicMerge},
+			ruleEntry: &policyIndexEntry[bool]{value: true, mergeType: &strategicMerge},
 			// gatewayValue: false must be ignored - an explicit value is pinned outright.
 			wantValue: true, wantPinned: true,
 		},
 		{
 			name:         "rule-level zero value with MergeType nil is pinned, does not inherit",
-			ruleEntry:    &policyPrecedenceEntry[bool]{value: false, mergeType: nil},
+			ruleEntry:    &policyIndexEntry[bool]{value: false, mergeType: nil},
 			gatewayValue: true, // must be ignored - pinned with nothing to inherit
 			wantPinned:   true,
 		},
 		{
 			name:         "rule-level zero value with MergeType set falls through to gateway, not pinned",
-			ruleEntry:    &policyPrecedenceEntry[bool]{value: false, mergeType: &strategicMerge},
+			ruleEntry:    &policyIndexEntry[bool]{value: false, mergeType: &strategicMerge},
 			gatewayValue: true,
 			wantValue:    true,
 		},
 		{
 			name:          "rule-level presence shields route-level entirely",
-			ruleEntry:     &policyPrecedenceEntry[bool]{value: false, mergeType: &strategicMerge},
-			routeEntry:    &policyPrecedenceEntry[bool]{value: true, mergeType: nil}, // must be ignored - shielded
-			listenerEntry: &policyPrecedenceListenerEntry[bool]{value: false, hasValue: true},
+			ruleEntry:     &policyIndexEntry[bool]{value: false, mergeType: &strategicMerge},
+			routeEntry:    &policyIndexEntry[bool]{value: true, mergeType: nil}, // must be ignored - shielded
+			listenerEntry: &policyIndexListenerEntry[bool]{value: false, hasValue: true},
 		},
 		{
 			name:         "no rule-level entry falls to route-level, which falls through to gateway",
-			routeEntry:   &policyPrecedenceEntry[bool]{value: false, mergeType: &strategicMerge},
+			routeEntry:   &policyIndexEntry[bool]{value: false, mergeType: &strategicMerge},
 			gatewayValue: true,
 			wantValue:    true,
 		},
 		{
 			name:         "routeRuleName nil skips rule-level check even if an entry exists",
-			ruleEntry:    &policyPrecedenceEntry[bool]{value: true, mergeType: nil}, // must be ignored - name nil skips it
-			routeEntry:   &policyPrecedenceEntry[bool]{value: false, mergeType: nil},
+			ruleEntry:    &policyIndexEntry[bool]{value: true, mergeType: nil}, // must be ignored - name nil skips it
+			routeEntry:   &policyIndexEntry[bool]{value: false, mergeType: nil},
 			omitRuleName: true,
 			wantPinned:   true, // from the route-level entry, whose own MergeType is nil
 		},
 		{
 			name:          "no rule/route entry falls to listener",
-			listenerEntry: &policyPrecedenceListenerEntry[bool]{value: true, hasValue: true},
+			listenerEntry: &policyIndexListenerEntry[bool]{value: true, hasValue: true},
 			// gatewayValue: false must be ignored - the listener entry is final.
 			wantValue: true,
 		},
 		{
 			name:          "listener entry present but zero value is still final, does not fall through",
-			listenerEntry: &policyPrecedenceListenerEntry[bool]{value: false, hasValue: true},
+			listenerEntry: &policyIndexListenerEntry[bool]{value: false, hasValue: true},
 			gatewayValue:  true, // must be ignored - the listener entry is still final
 		},
 		{
@@ -98,13 +98,13 @@ func TestPolicyPrecedenceIndexLookup(t *testing.T) {
 		},
 		{
 			name:          "listener entry with hasValue false transparently falls through to gateway",
-			listenerEntry: &policyPrecedenceListenerEntry[bool]{value: true, hasValue: false}, // e.g. policy doesn't address this field
+			listenerEntry: &policyIndexListenerEntry[bool]{value: true, hasValue: false}, // e.g. policy doesn't address this field
 			gatewayValue:  true,
 			wantValue:     true,
 		},
 		{
 			name:          "listenerName nil skips listener check, falls to gateway",
-			listenerEntry: &policyPrecedenceListenerEntry[bool]{value: true, hasValue: true}, // must be ignored - name nil skips it
+			listenerEntry: &policyIndexListenerEntry[bool]{value: true, hasValue: true}, // must be ignored - name nil skips it
 			gatewayValue:  true,
 			omitListener:  true,
 			wantValue:     true,
@@ -113,9 +113,9 @@ func TestPolicyPrecedenceIndexLookup(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			var idx *policyPrecedenceIndex[bool]
+			var idx *policyIndex[bool]
 			if !tc.nilIndex {
-				idx = newPolicyPrecedenceIndex[bool]()
+				idx = newPolicyIndex[bool]()
 				if tc.ruleEntry != nil {
 					idx.routeRuleLevel[ruleKey] = *tc.ruleEntry
 				}
@@ -143,30 +143,30 @@ func TestPolicyPrecedenceIndexLookup(t *testing.T) {
 	}
 }
 
-func TestPolicyPrecedenceIndexListenerAndGatewayLookups(t *testing.T) {
+func TestPolicyIndexListenerAndGatewayLookups(t *testing.T) {
 	gatewayNN := types.NamespacedName{Namespace: "default", Name: "gateway-1"}
 	listenerName := gwapiv1.SectionName("http")
 	listenerKey := policyTargetKey{Kind: resource.KindGateway, Namespace: gatewayNN.Namespace, Name: gatewayNN.Name, SectionName: string(listenerName)}
 	gatewayKey := policyTargetKey{Kind: resource.KindGateway, Namespace: gatewayNN.Namespace, Name: gatewayNN.Name}
 
 	t.Run("LookupListenerOrGateway reuses the same listener/gateway fallback", func(t *testing.T) {
-		idx := newPolicyPrecedenceIndex[bool]()
-		idx.listenerLevel[listenerKey] = policyPrecedenceListenerEntry[bool]{value: true, hasValue: true}
+		idx := newPolicyIndex[bool]()
+		idx.listenerLevel[listenerKey] = policyIndexListenerEntry[bool]{value: true, hasValue: true}
 		idx.gatewayLevel[gatewayKey] = false
 		require.True(t, idx.LookupListenerOrGateway(gatewayNN, &listenerName))
 	})
 
 	t.Run("LookupGateway resolves only the gateway level", func(t *testing.T) {
-		idx := newPolicyPrecedenceIndex[bool]()
-		idx.listenerLevel[listenerKey] = policyPrecedenceListenerEntry[bool]{value: true, hasValue: true} // must be ignored
+		idx := newPolicyIndex[bool]()
+		idx.listenerLevel[listenerKey] = policyIndexListenerEntry[bool]{value: true, hasValue: true} // must be ignored
 		idx.gatewayLevel[gatewayKey] = true
 		require.True(t, idx.LookupGateway(gatewayNN))
 	})
 }
 
-// TestPolicyPrecedenceIndexLookupPointerType proves Lookup works identically for a pointer value
+// TestPolicyIndexLookupPointerType proves Lookup works identically for a pointer value
 // type - value alone is the correct answer, MergeType nil pins the rule to its own nil value.
-func TestPolicyPrecedenceIndexLookupPointerType(t *testing.T) {
+func TestPolicyIndexLookupPointerType(t *testing.T) {
 	routeKind := gwapiv1.Kind("HTTPRoute")
 	routeNN := types.NamespacedName{Namespace: "default", Name: "route-1"}
 	gatewayNN := types.NamespacedName{Namespace: "default", Name: "gateway-1"}
@@ -176,54 +176,54 @@ func TestPolicyPrecedenceIndexLookupPointerType(t *testing.T) {
 	gatewayKey := policyTargetKey{Kind: resource.KindGateway, Namespace: gatewayNN.Namespace, Name: gatewayNN.Name}
 
 	endpoint := egv1a1.RoutingType("Endpoint")
-	idx := newPolicyPrecedenceIndex[*egv1a1.RoutingType]()
-	idx.routeRuleLevel[ruleKey] = policyPrecedenceEntry[*egv1a1.RoutingType]{value: nil, mergeType: nil}
+	idx := newPolicyIndex[*egv1a1.RoutingType]()
+	idx.routeRuleLevel[ruleKey] = policyIndexEntry[*egv1a1.RoutingType]{value: nil, mergeType: nil}
 	idx.gatewayLevel[gatewayKey] = &endpoint
 
 	value, _ := idx.Lookup(routeKind, routeNN, gatewayNN, &listenerName, &ruleName)
 	require.Nil(t, value)
 }
 
-func TestPolicyPrecedenceIndexSetters(t *testing.T) {
+func TestPolicyIndexSetters(t *testing.T) {
 	key := policyTargetKey{Kind: "HTTPRoute", Namespace: "default", Name: "route-1", SectionName: "rule-1"}
 	strategicMerge := egv1a1.StrategicMerge
 
 	t.Run("setRouteRuleLevel keeps the first entry recorded for a key", func(t *testing.T) {
-		idx := newPolicyPrecedenceIndex[bool]()
+		idx := newPolicyIndex[bool]()
 		idx.setRouteRuleLevel(key, true, &strategicMerge)
 		idx.setRouteRuleLevel(key, false, nil)
-		require.Equal(t, policyPrecedenceEntry[bool]{value: true, mergeType: &strategicMerge}, idx.routeRuleLevel[key])
+		require.Equal(t, policyIndexEntry[bool]{value: true, mergeType: &strategicMerge}, idx.routeRuleLevel[key])
 	})
 
 	t.Run("setRouteLevel keeps the first entry recorded for a key", func(t *testing.T) {
-		idx := newPolicyPrecedenceIndex[bool]()
+		idx := newPolicyIndex[bool]()
 		idx.setRouteLevel(key, true, nil)
 		idx.setRouteLevel(key, false, &strategicMerge)
-		require.Equal(t, policyPrecedenceEntry[bool]{value: true, mergeType: nil}, idx.routeLevel[key])
+		require.Equal(t, policyIndexEntry[bool]{value: true, mergeType: nil}, idx.routeLevel[key])
 	})
 
 	t.Run("setListenerLevel keeps the first entry recorded for a key", func(t *testing.T) {
-		idx := newPolicyPrecedenceIndex[bool]()
+		idx := newPolicyIndex[bool]()
 		idx.setListenerLevel(key, true, true)
 		idx.setListenerLevel(key, false, true)
-		require.Equal(t, policyPrecedenceListenerEntry[bool]{value: true, hasValue: true}, idx.listenerLevel[key])
+		require.Equal(t, policyIndexListenerEntry[bool]{value: true, hasValue: true}, idx.listenerLevel[key])
 	})
 
 	t.Run("setListenerLevel with hasValue false still claims the slot", func(t *testing.T) {
-		idx := newPolicyPrecedenceIndex[bool]()
+		idx := newPolicyIndex[bool]()
 		idx.setListenerLevel(key, true, false) // e.g. a policy that doesn't address this field
-		require.Equal(t, policyPrecedenceListenerEntry[bool]{value: true, hasValue: false}, idx.listenerLevel[key])
+		require.Equal(t, policyIndexListenerEntry[bool]{value: true, hasValue: false}, idx.listenerLevel[key])
 	})
 
 	t.Run("setListenerLevel with hasValue false blocks a later, hasValue true call from a different policy", func(t *testing.T) {
-		idx := newPolicyPrecedenceIndex[bool]()
+		idx := newPolicyIndex[bool]()
 		idx.setListenerLevel(key, true, false) // oldest, accepted policy - doesn't address this field
 		idx.setListenerLevel(key, true, true)  // younger, to-be-Conflicted policy - does
-		require.Equal(t, policyPrecedenceListenerEntry[bool]{value: true, hasValue: false}, idx.listenerLevel[key])
+		require.Equal(t, policyIndexListenerEntry[bool]{value: true, hasValue: false}, idx.listenerLevel[key])
 	})
 
 	t.Run("setGatewayLevel keeps the first value recorded for a key", func(t *testing.T) {
-		idx := newPolicyPrecedenceIndex[bool]()
+		idx := newPolicyIndex[bool]()
 		idx.setGatewayLevel(key, true)
 		idx.setGatewayLevel(key, false)
 		require.True(t, idx.gatewayLevel[key])

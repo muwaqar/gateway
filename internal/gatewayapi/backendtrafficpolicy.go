@@ -39,21 +39,21 @@ const (
 	ResponseBodyConfigMapKey = "response.body"
 )
 
-// BTPRoutingTypeIndex holds RoutingType values from BackendTrafficPolicies. This avoids an
-// O(BTPs) lookup for every iteration of processDestination.
+// BTPRoutingTypeIndex holds RoutingType values from BackendTrafficPolicies
+// This avoids an O(BTPs) lookup for every iteration of processDestination.
 type BTPRoutingTypeIndex struct {
-	precedence *policyPrecedenceIndex[*egv1a1.RoutingType]
+	index *policyIndex[*egv1a1.RoutingType]
 }
 
-// btpRoutingTypeIndexMaps allocates a BTPRoutingTypeIndex.
-func btpRoutingTypeIndexMaps() *BTPRoutingTypeIndex {
-	return &BTPRoutingTypeIndex{precedence: newPolicyPrecedenceIndex[*egv1a1.RoutingType]()}
+// newBTPRoutingTypeIndex allocates a BTPRoutingTypeIndex.
+func newBTPRoutingTypeIndex() *BTPRoutingTypeIndex {
+	return &BTPRoutingTypeIndex{index: newPolicyIndex[*egv1a1.RoutingType]()}
 }
 
-// LookupBTPRoutingType resolves the RoutingType for a specific route rule and gateway/listener
-// combination, following the same route-rule/route/listener/gateway precedence and MergeType
-// semantics BackendTrafficPolicy itself uses. Returns nil if no policy governs, or if the index
-// is nil.
+// LookupBTPRoutingType resolves the RoutingType for a specific route rule
+// and gateway/listener combination by checking the index in
+// priority order: routeRule > route > listener > gateway, honoring MergeType.
+// Returns nil if no matching BTP RoutingType is found, or if the index is nil.
 func (idx *BTPRoutingTypeIndex) LookupBTPRoutingType(
 	routeKind gwapiv1.Kind,
 	routeNN types.NamespacedName,
@@ -64,7 +64,7 @@ func (idx *BTPRoutingTypeIndex) LookupBTPRoutingType(
 	if idx == nil {
 		return nil
 	}
-	value, _ := idx.precedence.Lookup(routeKind, routeNN, gatewayNN, listenerName, routeRuleName)
+	value, _ := idx.index.Lookup(routeKind, routeNN, gatewayNN, listenerName, routeRuleName)
 	return value
 }
 
@@ -75,7 +75,7 @@ func (idx *BTPRoutingTypeIndex) LookupGatewayBTRoutingType(gatewayNN types.Names
 	if idx == nil {
 		return nil
 	}
-	return idx.precedence.LookupGateway(gatewayNN)
+	return idx.index.LookupGateway(gatewayNN)
 }
 
 // btpSpecHasClusterScopedFields reports whether spec sets any backend-cluster-scoped (CDS) field —
@@ -99,25 +99,25 @@ func btpSpecHasClusterScopedFields(spec *egv1a1.BackendTrafficPolicySpec) bool {
 }
 
 // BTPClusterSettingsIndex holds, per route-rule/route/listener target, whether a
-// BackendTrafficPolicy sets a cluster-scoped field or has MergeType unset. Gateway is never recorded.
+// BackendTrafficPolicy sets a cluster-scoped field, or has MergeType unset.
 type BTPClusterSettingsIndex struct {
-	precedence *policyPrecedenceIndex[bool]
+	index *policyIndex[bool]
 }
 
-// btpClusterSettingsIndexMaps allocates a BTPClusterSettingsIndex.
-func btpClusterSettingsIndexMaps() *BTPClusterSettingsIndex {
-	return &BTPClusterSettingsIndex{precedence: newPolicyPrecedenceIndex[bool]()}
+// newBTPClusterSettingsIndex allocates a BTPClusterSettingsIndex.
+func newBTPClusterSettingsIndex() *BTPClusterSettingsIndex {
+	return &BTPClusterSettingsIndex{index: newPolicyIndex[bool]()}
 }
 
 // BTPLoadBalancerIndex reports, per gateway, whether a BackendTrafficPolicy attached to it sets
-// LoadBalancer to ConsistentHash. Only ever populates the shared primitive's gateway level.
+// LoadBalancer to ConsistentHash.
 type BTPLoadBalancerIndex struct {
-	precedence *policyPrecedenceIndex[bool]
+	index *policyIndex[bool]
 }
 
-// btpLoadBalancerIndexMaps allocates a BTPLoadBalancerIndex.
-func btpLoadBalancerIndexMaps() *BTPLoadBalancerIndex {
-	return &BTPLoadBalancerIndex{precedence: newPolicyPrecedenceIndex[bool]()}
+// newBTPLoadBalancerIndex allocates a BTPLoadBalancerIndex.
+func newBTPLoadBalancerIndex() *BTPLoadBalancerIndex {
+	return &BTPLoadBalancerIndex{index: newPolicyIndex[bool]()}
 }
 
 // BTPIndexes groups the three pre-computed BackendTrafficPolicy indexes BuildBTPIndexes builds
@@ -137,9 +137,9 @@ func BuildBTPIndexes(
 	namespaceLookup func(string) *corev1.Namespace,
 	mergeBackendsEnabled bool,
 ) *BTPIndexes {
-	routingTypeIdx := btpRoutingTypeIndexMaps()
-	clusterSettingsIdx := btpClusterSettingsIndexMaps()
-	loadBalancerIdx := btpLoadBalancerIndexMaps()
+	routingTypeIdx := newBTPRoutingTypeIndex()
+	clusterSettingsIdx := newBTPClusterSettingsIndex()
+	loadBalancerIdx := newBTPLoadBalancerIndex()
 
 	allTargets := make([]client.Object, 0, len(routes)+len(gateways))
 	allTargets = append(allTargets, routes...)
@@ -175,31 +175,31 @@ func BuildBTPIndexes(
 
 			switch {
 			case kind == resource.KindGateway && ref.SectionName != nil:
-				routingTypeIdx.precedence.setListenerLevel(key, btp.Spec.RoutingType, hasRoutingType)
+				routingTypeIdx.index.setListenerLevel(key, btp.Spec.RoutingType, hasRoutingType)
 			case kind == resource.KindGateway:
-				routingTypeIdx.precedence.setGatewayLevel(key, btp.Spec.RoutingType)
+				routingTypeIdx.index.setGatewayLevel(key, btp.Spec.RoutingType)
 			case ref.SectionName != nil:
-				routingTypeIdx.precedence.setRouteRuleLevel(key, btp.Spec.RoutingType, btp.Spec.MergeType)
+				routingTypeIdx.index.setRouteRuleLevel(key, btp.Spec.RoutingType, btp.Spec.MergeType)
 			default:
-				routingTypeIdx.precedence.setRouteLevel(key, btp.Spec.RoutingType, btp.Spec.MergeType)
+				routingTypeIdx.index.setRouteLevel(key, btp.Spec.RoutingType, btp.Spec.MergeType)
 			}
 
 			switch {
 			case kind == resource.KindGateway && ref.SectionName != nil:
-				clusterSettingsIdx.precedence.setListenerLevel(key, hasClusterScoped, true)
+				clusterSettingsIdx.index.setListenerLevel(key, hasClusterScoped, true)
 			case kind == resource.KindGateway:
 				// Gateway-level settings apply uniformly to every route sharing a merged
-				// cluster, so they don't disqualify merging - deliberately left unpopulated.
+				// cluster, so they don't disqualify merging - no entry needed.
 			case ref.SectionName != nil:
-				clusterSettingsIdx.precedence.setRouteRuleLevel(key, hasClusterScoped, btp.Spec.MergeType)
+				clusterSettingsIdx.index.setRouteRuleLevel(key, hasClusterScoped, btp.Spec.MergeType)
 			default:
-				clusterSettingsIdx.precedence.setRouteLevel(key, hasClusterScoped, btp.Spec.MergeType)
+				clusterSettingsIdx.index.setRouteLevel(key, hasClusterScoped, btp.Spec.MergeType)
 			}
 
 			if hasLoadBalancer {
 				switch {
 				case kind == resource.KindGateway && ref.SectionName == nil:
-					loadBalancerIdx.precedence.setGatewayLevel(key, btp.Spec.LoadBalancer.Type == egv1a1.ConsistentHashLoadBalancerType)
+					loadBalancerIdx.index.setGatewayLevel(key, btp.Spec.LoadBalancer.Type == egv1a1.ConsistentHashLoadBalancerType)
 				default:
 					// A listener/route-rule/route-level LoadBalancer setting already disqualifies
 					// its own rule from merging on its own, so it's never looked up here.
@@ -215,8 +215,10 @@ func BuildBTPIndexes(
 	}
 }
 
-// HasRouteLevelClusterSettings reports whether the given target's resolved cluster settings might
-// diverge from the uniform gateway/listener baseline other merge-eligible rules share.
+// HasRouteLevelClusterSettings reports whether a route-rule, route, or listener-level
+// BackendTrafficPolicy contributes backend-cluster-scoped settings for the given target, or
+// targets it with MergeType unset. A gateway-level setting isn't checked: it applies uniformly
+// to every route sharing a merged cluster, so it can't cause a divergence.
 func (idx *BTPClusterSettingsIndex) HasRouteLevelClusterSettings(
 	routeKind gwapiv1.Kind,
 	routeNN types.NamespacedName,
@@ -227,8 +229,10 @@ func (idx *BTPClusterSettingsIndex) HasRouteLevelClusterSettings(
 	if idx == nil {
 		return false
 	}
-	value, pinned := idx.precedence.Lookup(routeKind, routeNN, gatewayNN, listenerName, routeRuleName)
-	// pinned catches the unset-but-MergeType-nil case value alone would miss.
+	value, pinned := idx.index.Lookup(routeKind, routeNN, gatewayNN, listenerName, routeRuleName)
+	// pinned catches what value alone would miss: a rule's own BTP with MergeType nil and no
+	// cluster-scoped field (value: false) still resolves to its own empty settings, not the
+	// gateway's - diverging from a sibling rule that has no BTP and does inherit the gateway's.
 	return value || pinned
 }
 
@@ -238,7 +242,7 @@ func (idx *BTPLoadBalancerIndex) IsConsistentHash(gatewayNN types.NamespacedName
 	if idx == nil {
 		return false
 	}
-	return idx.precedence.LookupGateway(gatewayNN)
+	return idx.index.LookupGateway(gatewayNN)
 }
 
 // deprecatedFieldsUsedInBackendTrafficPolicy returns a map of deprecated field paths to their alternatives.

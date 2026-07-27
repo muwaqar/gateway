@@ -51,12 +51,12 @@ func ctpSpecHasClusterScopedFields(spec *egv1a1.ClientTrafficPolicySpec) bool {
 // sets a cluster-affecting field. Gateway-wide settings (no SectionName) aren't tracked, since a
 // merged cluster never spans gateways and so can never see them diverge.
 type CTPClusterSettingsIndex struct {
-	index *policyPrecedenceIndex[bool]
+	index *policyIndex[bool]
 }
 
 // newCTPClusterSettingsIndex allocates a CTPClusterSettingsIndex.
 func newCTPClusterSettingsIndex() *CTPClusterSettingsIndex {
-	return &CTPClusterSettingsIndex{index: newPolicyPrecedenceIndex[bool]()}
+	return &CTPClusterSettingsIndex{index: newPolicyIndex[bool]()}
 }
 
 // HasListenerLevelClusterSettings reports whether any of listeners - the route's actual resolved

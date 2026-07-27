@@ -681,10 +681,13 @@ func TestShouldMergeBackend(t *testing.T) {
 			if tc.backend != nil {
 				backendMap[types.NamespacedName{Namespace: tc.backend.Namespace, Name: tc.backend.Name}] = tc.backend
 			}
-			routingTypeIdx := btpRoutingTypeIndexMaps()
-			routingTypeIdx.precedence.setGatewayLevel(
-				policyTargetKey{Kind: "Gateway", Namespace: gwNN.Namespace, Name: gwNN.Name}, tc.gatewayBaselineRT,
-			)
+			routingTypeIdx := func() *BTPRoutingTypeIndex {
+				idx := newBTPRoutingTypeIndex()
+				idx.index.setGatewayLevel(
+					policyTargetKey{Kind: "Gateway", Namespace: gwNN.Namespace, Name: gwNN.Name}, tc.gatewayBaselineRT,
+				)
+				return idx
+			}()
 			tr := &Translator{
 				MergeBackends: tc.mergeEnabled,
 				TranslatorContext: &TranslatorContext{
@@ -836,16 +839,22 @@ func TestMergeIncompatibleForWeightedRule(t *testing.T) {
 	parentRef := &RouteParentContext{ParentReference: &gwapiv1.ParentReference{}}
 
 	// consistentHashIdx forces IsConsistentHash to return true for gatewayCtx's gateway.
-	consistentHashIdx := btpLoadBalancerIndexMaps()
-	consistentHashIdx.precedence.setGatewayLevel(
-		policyTargetKey{Kind: resource.KindGateway, Namespace: "envoy-gateway", Name: "gateway-1"}, true,
-	)
+	consistentHashIdx := func() *BTPLoadBalancerIndex {
+		idx := newBTPLoadBalancerIndex()
+		idx.index.setGatewayLevel(
+			policyTargetKey{Kind: resource.KindGateway, Namespace: "envoy-gateway", Name: "gateway-1"}, true,
+		)
+		return idx
+	}()
 
 	// clusterSettingsIdx forces HasRouteLevelClusterSettings to return true for route's own target.
-	clusterSettingsIdx := btpClusterSettingsIndexMaps()
-	clusterSettingsIdx.precedence.setRouteLevel(
-		policyTargetKey{Kind: "HTTPRoute", Namespace: "default", Name: "route-1"}, true, nil,
-	)
+	clusterSettingsIdx := func() *BTPClusterSettingsIndex {
+		idx := newBTPClusterSettingsIndex()
+		idx.index.setRouteLevel(
+			policyTargetKey{Kind: "HTTPRoute", Namespace: "default", Name: "route-1"}, true, nil,
+		)
+		return idx
+	}()
 
 	tests := []struct {
 		name               string
