@@ -245,13 +245,13 @@ xdsIR:
     accessLog:
       json:
       - path: /dev/stdout
-    backends:
+    backendClusters:
     - metadata:
         kind: Service
         name: service-4
         namespace: default
         sectionName: "8080"
-      name: backend/service/default/service-4/8080/http
+      name: service/default/service-4/8080/http
       setting:
         endpoints:
         - host: 1.1.1.1
@@ -261,8 +261,9 @@ xdsIR:
           name: service-4
           namespace: default
           sectionName: "8080"
-        name: backend/service/default/service-4/8080/http
+        name: service/default/service-4/8080/http
         protocol: HTTP
+      traffic: {}
     globalResources:
       proxyServiceCluster:
         metadata:
@@ -340,7 +341,7 @@ xdsIR:
           circuitBreaker: {}
       - destination:
           backendClusterRefs:
-          - name: backend/service/default/service-4/8080/http
+          - name: service/default/service-4/8080/http
             weight: 1
           metadata:
             kind: HTTPRoute

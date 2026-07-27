@@ -141,13 +141,13 @@ xdsIR:
     accessLog:
       json:
       - path: /dev/stdout
-    backends:
+    backendClusters:
     - metadata:
         kind: Service
         name: service-1
         namespace: default
         sectionName: "8080"
-      name: backend/service/default/service-1/8080/http
+      name: service/default/service-1/8080/http
       setting:
         addressType: IP
         endpoints:
@@ -158,7 +158,7 @@ xdsIR:
           name: service-1
           namespace: default
           sectionName: "8080"
-        name: backend/service/default/service-1/8080/http
+        name: service/default/service-1/8080/http
         protocol: HTTP
     globalResources:
       proxyServiceCluster:
@@ -199,7 +199,7 @@ xdsIR:
       routes:
       - destination:
           backendClusterRefs:
-          - name: backend/service/default/service-1/8080/http
+          - name: service/default/service-1/8080/http
             weight: 1
           metadata:
             kind: HTTPRoute
