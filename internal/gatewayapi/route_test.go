@@ -686,7 +686,7 @@ func TestShouldMergeBackend(t *testing.T) {
 				TranslatorContext: &TranslatorContext{
 					BackendMap: backendMap,
 					BTPRoutingTypeIndex: &BTPRoutingTypeIndex{
-						gatewayLevel: map[btpRoutingKey]*egv1a1.RoutingType{
+						gatewayLevel: map[policyTargetKey]*egv1a1.RoutingType{
 							{Kind: "Gateway", Namespace: gwNN.Namespace, Name: gwNN.Name}: tc.gatewayBaselineRT,
 						},
 					},
@@ -843,11 +843,10 @@ func TestMergeIncompatibleForWeightedRule(t *testing.T) {
 	}
 
 	// clusterSettingsIdx forces HasRouteLevelClusterSettings to return true for route's own target.
-	clusterSettingsIdx := &BTPClusterSettingsIndex{
-		routeLevel: map[btpRoutingKey]bool{
-			{Kind: "HTTPRoute", Namespace: "default", Name: "route-1"}: true,
-		},
-	}
+	clusterSettingsIdx := btpClusterSettingsIndexMaps()
+	clusterSettingsIdx.precedence.setRouteLevel(
+		policyTargetKey{Kind: "HTTPRoute", Namespace: "default", Name: "route-1"}, true, nil,
+	)
 
 	tests := []struct {
 		name               string
