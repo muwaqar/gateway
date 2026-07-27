@@ -683,9 +683,7 @@ func TestShouldMergeBackend(t *testing.T) {
 			}
 			routingTypeIdx := func() *BTPRoutingTypeIndex {
 				idx := newBTPRoutingTypeIndex()
-				idx.index.setGatewayLevel(
-					policyTargetKey{Kind: "Gateway", Namespace: gwNN.Namespace, Name: gwNN.Name}, tc.gatewayBaselineRT,
-				)
+				idx.index.setGatewayLevel(gwNN, tc.gatewayBaselineRT)
 				return idx
 			}()
 			tr := &Translator{
@@ -841,18 +839,14 @@ func TestMergeIncompatibleForWeightedRule(t *testing.T) {
 	// consistentHashIdx forces IsConsistentHash to return true for gatewayCtx's gateway.
 	consistentHashIdx := func() *BTPLoadBalancerIndex {
 		idx := newBTPLoadBalancerIndex()
-		idx.index.setGatewayLevel(
-			policyTargetKey{Kind: resource.KindGateway, Namespace: "envoy-gateway", Name: "gateway-1"}, true,
-		)
+		idx.index.setGatewayLevel(types.NamespacedName{Namespace: "envoy-gateway", Name: "gateway-1"}, true)
 		return idx
 	}()
 
 	// clusterSettingsIdx forces HasRouteLevelClusterSettings to return true for route's own target.
 	clusterSettingsIdx := func() *BTPClusterSettingsIndex {
 		idx := newBTPClusterSettingsIndex()
-		idx.index.setRouteLevel(
-			policyTargetKey{Kind: "HTTPRoute", Namespace: "default", Name: "route-1"}, true, nil,
-		)
+		idx.index.setRouteLevel(types.NamespacedName{Namespace: "default", Name: "route-1"}, resource.KindHTTPRoute, true, nil)
 		return idx
 	}()
 

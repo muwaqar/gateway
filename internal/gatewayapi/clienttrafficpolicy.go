@@ -69,15 +69,15 @@ func (idx *CTPClusterSettingsIndex) HasListenerLevelClusterSettings(gatewayNN ty
 	for _, l := range listeners {
 		if l.isFromListenerSet() {
 			lsNN := types.NamespacedName{Namespace: l.listenerSet.Namespace, Name: l.listenerSet.Name}
-			if idx.index.LookupOwnerLevel(resource.KindListenerSet, lsNN) {
+			if value, found := idx.index.LookupExact(listenerSetScope(lsNN)); found && value {
 				return true
 			}
-			if value, found := idx.index.LookupOwnerListenerLevel(resource.KindListenerSet, lsNN, l.Name); found && value {
+			if value, found := idx.index.LookupExact(listenerSetListenerScope(lsNN, l.Name)); found && value {
 				return true
 			}
 			continue
 		}
-		if value, found := idx.index.LookupOwnerListenerLevel(resource.KindGateway, gatewayNN, l.Name); found && value {
+		if value, found := idx.index.LookupExact(gatewayListenerScope(gatewayNN, l.Name)); found && value {
 			return true
 		}
 	}
@@ -114,17 +114,17 @@ func BuildCTPClusterSettingsIndex(
 		)
 
 		for _, ref := range refs {
-			key := policyTargetKey{Kind: string(ref.Kind), Namespace: string(ref.Namespace), Name: string(ref.Name), SectionName: string(ptr.Deref(ref.SectionName, ""))}
+			nn := types.NamespacedName{Namespace: string(ref.Namespace), Name: string(ref.Name)}
 			switch {
 			case ref.Kind == resource.KindGateway && ref.SectionName != nil:
-				idx.index.setListenerLevel(key, hasClusterScoped, true)
+				idx.index.setGatewayListenerLevel(nn, *ref.SectionName, hasClusterScoped, true)
 			case ref.Kind == resource.KindGateway:
 				// Gateway-wide settings apply uniformly to every route sharing a merged cluster,
 				// so they don't disqualify merging - no entry needed.
 			case ref.Kind == resource.KindListenerSet && ref.SectionName != nil:
-				idx.index.setListenerLevel(key, hasClusterScoped, true)
+				idx.index.setListenerSetListenerLevel(nn, *ref.SectionName, hasClusterScoped, true)
 			case ref.Kind == resource.KindListenerSet:
-				idx.index.setGatewayLevel(key, hasClusterScoped)
+				idx.index.setListenerSetLevel(nn, hasClusterScoped)
 			}
 		}
 	}

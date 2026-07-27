@@ -75,7 +75,8 @@ func (idx *BTPRoutingTypeIndex) LookupGatewayBTRoutingType(gatewayNN types.Names
 	if idx == nil {
 		return nil
 	}
-	return idx.index.LookupGateway(gatewayNN)
+	value, _ := idx.index.LookupExact(gatewayScope(gatewayNN))
+	return value
 }
 
 // btpSpecHasClusterScopedFields reports whether spec sets any backend-cluster-scoped (CDS) field —
@@ -149,10 +150,8 @@ func BuildBTPIndexes(
 
 	for _, btp := range btps {
 		hasRoutingType := btp.Spec.RoutingType != nil
-		// ClusterSettings/LoadBalancer only inform merge-eligibility, so they're moot when no
-		// accepted gateway can enable merging; RoutingType applies regardless of MergeBackends.
-		hasClusterScoped := mergeBackendsEnabled && btpSpecHasClusterScopedFields(&btp.Spec)
-		hasLoadBalancer := mergeBackendsEnabled && btp.Spec.LoadBalancer != nil
+		hasClusterScoped := btpSpecHasClusterScopedFields(&btp.Spec)
+		hasLoadBalancer := btp.Spec.LoadBalancer != nil
 
 		refs := resolvePolicyTargets(
 			btp.Spec.PolicyTargetReferences,
@@ -166,43 +165,42 @@ func BuildBTPIndexes(
 
 		for _, ref := range refs {
 			kind := string(ref.Kind)
-			key := policyTargetKey{
-				Kind:        kind,
-				Namespace:   string(ref.Namespace),
-				Name:        string(ref.Name),
-				SectionName: string(ptr.Deref(ref.SectionName, "")),
-			}
+			nn := types.NamespacedName{Namespace: string(ref.Namespace), Name: string(ref.Name)}
 
 			switch {
 			case kind == resource.KindGateway && ref.SectionName != nil:
-				routingTypeIdx.index.setListenerLevel(key, btp.Spec.RoutingType, hasRoutingType)
+				routingTypeIdx.index.setGatewayListenerLevel(nn, *ref.SectionName, btp.Spec.RoutingType, hasRoutingType)
 			case kind == resource.KindGateway:
-				routingTypeIdx.index.setGatewayLevel(key, btp.Spec.RoutingType)
+				routingTypeIdx.index.setGatewayLevel(nn, btp.Spec.RoutingType)
 			case ref.SectionName != nil:
-				routingTypeIdx.index.setRouteRuleLevel(key, btp.Spec.RoutingType, btp.Spec.MergeType)
+				routingTypeIdx.index.setRouteRuleLevel(nn, kind, *ref.SectionName, btp.Spec.RoutingType, btp.Spec.MergeType)
 			default:
-				routingTypeIdx.index.setRouteLevel(key, btp.Spec.RoutingType, btp.Spec.MergeType)
+				routingTypeIdx.index.setRouteLevel(nn, kind, btp.Spec.RoutingType, btp.Spec.MergeType)
 			}
 
-			switch {
-			case kind == resource.KindGateway && ref.SectionName != nil:
-				clusterSettingsIdx.index.setListenerLevel(key, hasClusterScoped, true)
-			case kind == resource.KindGateway:
-				// Gateway-level settings apply uniformly to every route sharing a merged
-				// cluster, so they don't disqualify merging - no entry needed.
-			case ref.SectionName != nil:
-				clusterSettingsIdx.index.setRouteRuleLevel(key, hasClusterScoped, btp.Spec.MergeType)
-			default:
-				clusterSettingsIdx.index.setRouteLevel(key, hasClusterScoped, btp.Spec.MergeType)
-			}
-
-			if hasLoadBalancer {
+			// ClusterSettings/LoadBalancer only inform merge-eligibility, so they're moot when no
+			// accepted gateway can enable merging; RoutingType (above) applies regardless.
+			if mergeBackendsEnabled {
 				switch {
-				case kind == resource.KindGateway && ref.SectionName == nil:
-					loadBalancerIdx.index.setGatewayLevel(key, btp.Spec.LoadBalancer.Type == egv1a1.ConsistentHashLoadBalancerType)
+				case kind == resource.KindGateway && ref.SectionName != nil:
+					clusterSettingsIdx.index.setGatewayListenerLevel(nn, *ref.SectionName, hasClusterScoped, true)
+				case kind == resource.KindGateway:
+					// Gateway-level settings apply uniformly to every route sharing a merged
+					// cluster, so they don't disqualify merging - no entry needed.
+				case ref.SectionName != nil:
+					clusterSettingsIdx.index.setRouteRuleLevel(nn, kind, *ref.SectionName, hasClusterScoped, btp.Spec.MergeType)
 				default:
-					// A listener/route-rule/route-level LoadBalancer setting already disqualifies
-					// its own rule from merging on its own, so it's never looked up here.
+					clusterSettingsIdx.index.setRouteLevel(nn, kind, hasClusterScoped, btp.Spec.MergeType)
+				}
+
+				if hasLoadBalancer {
+					switch {
+					case kind == resource.KindGateway && ref.SectionName == nil:
+						loadBalancerIdx.index.setGatewayLevel(nn, btp.Spec.LoadBalancer.Type == egv1a1.ConsistentHashLoadBalancerType)
+					default:
+						// A listener/route-rule/route-level LoadBalancer setting already disqualifies
+						// its own rule from merging on its own, so it's never looked up here.
+					}
 				}
 			}
 		}
@@ -242,7 +240,8 @@ func (idx *BTPLoadBalancerIndex) IsConsistentHash(gatewayNN types.NamespacedName
 	if idx == nil {
 		return false
 	}
-	return idx.index.LookupGateway(gatewayNN)
+	value, _ := idx.index.LookupExact(gatewayScope(gatewayNN))
+	return value
 }
 
 // deprecatedFieldsUsedInBackendTrafficPolicy returns a map of deprecated field paths to their alternatives.
