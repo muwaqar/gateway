@@ -136,6 +136,30 @@ func (idx *policyPrecedenceIndex[T]) LookupGateway(gatewayNN types.NamespacedNam
 	return idx.gatewayLevel[gatewayKey]
 }
 
+// LookupOwnerListenerLevel is LookupListenerOrGateway's counterpart for an owner kind other than
+// Gateway (e.g. ListenerSet), with no gateway/listenerSet-wide fallback.
+func (idx *policyPrecedenceIndex[T]) LookupOwnerListenerLevel(ownerKind string, ownerNN types.NamespacedName, listenerName gwapiv1.SectionName) (T, bool) {
+	var zero T
+	if idx == nil {
+		return zero, false
+	}
+	key := policyTargetKey{Kind: ownerKind, Namespace: ownerNN.Namespace, Name: ownerNN.Name, SectionName: string(listenerName)}
+	if entry, found := idx.listenerLevel[key]; found && entry.hasValue {
+		return entry.value, true
+	}
+	return zero, false
+}
+
+// LookupOwnerLevel is LookupGateway's counterpart for an owner kind other than Gateway.
+func (idx *policyPrecedenceIndex[T]) LookupOwnerLevel(ownerKind string, ownerNN types.NamespacedName) T {
+	var zero T
+	if idx == nil {
+		return zero
+	}
+	key := policyTargetKey{Kind: ownerKind, Namespace: ownerNN.Namespace, Name: ownerNN.Name}
+	return idx.gatewayLevel[key]
+}
+
 // resolveEntry reports pinned: true whenever entry itself supplies the final answer - an explicit
 // value, or an unset value with MergeType nil - and false only when it falls through to a parent.
 func (idx *policyPrecedenceIndex[T]) resolveEntry(entry policyPrecedenceEntry[T], gatewayNN types.NamespacedName, listenerName *gwapiv1.SectionName) (T, bool) {

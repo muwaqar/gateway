@@ -836,11 +836,10 @@ func TestMergeIncompatibleForWeightedRule(t *testing.T) {
 	parentRef := &RouteParentContext{ParentReference: &gwapiv1.ParentReference{}}
 
 	// consistentHashIdx forces IsConsistentHash to return true for gatewayCtx's gateway.
-	consistentHashIdx := &BTPLoadBalancerIndex{
-		gatewayLevel: map[types.NamespacedName]bool{
-			{Namespace: "envoy-gateway", Name: "gateway-1"}: true,
-		},
-	}
+	consistentHashIdx := btpLoadBalancerIndexMaps()
+	consistentHashIdx.precedence.setGatewayLevel(
+		policyTargetKey{Kind: resource.KindGateway, Namespace: "envoy-gateway", Name: "gateway-1"}, true,
+	)
 
 	// clusterSettingsIdx forces HasRouteLevelClusterSettings to return true for route's own target.
 	clusterSettingsIdx := btpClusterSettingsIndexMaps()

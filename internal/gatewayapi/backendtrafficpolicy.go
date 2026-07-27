@@ -39,9 +39,8 @@ const (
 	ResponseBodyConfigMapKey = "response.body"
 )
 
-// BTPRoutingTypeIndex holds RoutingType values from BackendTrafficPolicies, resolved with the
-// same route-rule/route/listener/gateway precedence BackendTrafficPolicy itself uses. This avoids
-// an O(BTPs) lookup for every iteration of processDestination.
+// BTPRoutingTypeIndex holds RoutingType values from BackendTrafficPolicies. This avoids an
+// O(BTPs) lookup for every iteration of processDestination.
 type BTPRoutingTypeIndex struct {
 	precedence *policyPrecedenceIndex[*egv1a1.RoutingType]
 }
@@ -100,8 +99,7 @@ func btpSpecHasClusterScopedFields(spec *egv1a1.BackendTrafficPolicySpec) bool {
 }
 
 // BTPClusterSettingsIndex holds, per route-rule/route/listener target, whether a
-// BackendTrafficPolicy sets a cluster-scoped field, or targets it with MergeType unset (pinning it
-// to its own settings instead of inheriting). Gateway-level is never recorded - it's uniform.
+// BackendTrafficPolicy sets a cluster-scoped field or has MergeType unset. Gateway is never recorded.
 type BTPClusterSettingsIndex struct {
 	precedence *policyPrecedenceIndex[bool]
 }
@@ -112,16 +110,14 @@ func btpClusterSettingsIndexMaps() *BTPClusterSettingsIndex {
 }
 
 // BTPLoadBalancerIndex reports, per gateway, whether a BackendTrafficPolicy attached to it sets
-// LoadBalancer to ConsistentHash.
+// LoadBalancer to ConsistentHash. Only ever populates the shared primitive's gateway level.
 type BTPLoadBalancerIndex struct {
-	gatewayLevel map[types.NamespacedName]bool
+	precedence *policyPrecedenceIndex[bool]
 }
 
-// btpLoadBalancerIndexMaps allocates BTPLoadBalancerIndex's maps.
+// btpLoadBalancerIndexMaps allocates a BTPLoadBalancerIndex.
 func btpLoadBalancerIndexMaps() *BTPLoadBalancerIndex {
-	return &BTPLoadBalancerIndex{
-		gatewayLevel: make(map[types.NamespacedName]bool),
-	}
+	return &BTPLoadBalancerIndex{precedence: newPolicyPrecedenceIndex[bool]()}
 }
 
 // BTPIndexes groups the three pre-computed BackendTrafficPolicy indexes BuildBTPIndexes builds
@@ -203,10 +199,7 @@ func BuildBTPIndexes(
 			if hasLoadBalancer {
 				switch {
 				case kind == resource.KindGateway && ref.SectionName == nil:
-					gwKey := types.NamespacedName{Namespace: string(ref.Namespace), Name: string(ref.Name)}
-					if _, exists := loadBalancerIdx.gatewayLevel[gwKey]; !exists {
-						loadBalancerIdx.gatewayLevel[gwKey] = btp.Spec.LoadBalancer.Type == egv1a1.ConsistentHashLoadBalancerType
-					}
+					loadBalancerIdx.precedence.setGatewayLevel(key, btp.Spec.LoadBalancer.Type == egv1a1.ConsistentHashLoadBalancerType)
 				default:
 					// A listener/route-rule/route-level LoadBalancer setting already disqualifies
 					// its own rule from merging on its own, so it's never looked up here.
@@ -245,7 +238,7 @@ func (idx *BTPLoadBalancerIndex) IsConsistentHash(gatewayNN types.NamespacedName
 	if idx == nil {
 		return false
 	}
-	return idx.gatewayLevel[gatewayNN]
+	return idx.precedence.LookupGateway(gatewayNN)
 }
 
 // deprecatedFieldsUsedInBackendTrafficPolicy returns a map of deprecated field paths to their alternatives.
