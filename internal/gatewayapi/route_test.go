@@ -681,15 +681,15 @@ func TestShouldMergeBackend(t *testing.T) {
 			if tc.backend != nil {
 				backendMap[types.NamespacedName{Namespace: tc.backend.Namespace, Name: tc.backend.Name}] = tc.backend
 			}
+			routingTypeIdx := btpRoutingTypeIndexMaps()
+			routingTypeIdx.precedence.setGatewayLevel(
+				policyTargetKey{Kind: "Gateway", Namespace: gwNN.Namespace, Name: gwNN.Name}, tc.gatewayBaselineRT,
+			)
 			tr := &Translator{
 				MergeBackends: tc.mergeEnabled,
 				TranslatorContext: &TranslatorContext{
-					BackendMap: backendMap,
-					BTPRoutingTypeIndex: &BTPRoutingTypeIndex{
-						gatewayLevel: map[policyTargetKey]*egv1a1.RoutingType{
-							{Kind: "Gateway", Namespace: gwNN.Namespace, Name: gwNN.Name}: tc.gatewayBaselineRT,
-						},
-					},
+					BackendMap:          backendMap,
+					BTPRoutingTypeIndex: routingTypeIdx,
 				},
 			}
 			testGwCtx := gwCtx
