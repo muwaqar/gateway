@@ -164,8 +164,6 @@ func TestPolicyIndexListenerAndGatewayLookups(t *testing.T) {
 	})
 }
 
-// TestPolicyIndexLookupPointerType proves Lookup works identically for a pointer value
-// type - value alone is the correct answer, MergeType nil pins the rule to its own nil value.
 func TestPolicyIndexLookupPointerType(t *testing.T) {
 	routeKind := gwapiv1.Kind("HTTPRoute")
 	routeNN := types.NamespacedName{Namespace: "default", Name: "route-1"}

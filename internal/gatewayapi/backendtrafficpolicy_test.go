@@ -1810,6 +1810,304 @@ func TestBTPRoutingTypeIndex(t *testing.T) {
 			gatewayNN: gatewayNN,
 			expected:  &serviceRouting,
 		},
+		{
+			name: "rule BTP with MergeType unset does not inherit gateway's RoutingType",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("Gateway"),
+									Name:  gwapiv1.ObjectName("gateway-1"),
+								},
+							},
+						},
+						RoutingType: &endpointRouting,
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-rule"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+								SectionName: new(gwapiv1.SectionName("rule-1")),
+							},
+						},
+						// Sets a field, just not RoutingType; MergeType left nil.
+						ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}},
+					},
+				},
+			},
+			routes:        []client.Object{defaultHTTPRoute},
+			gateways:      []*GatewayContext{defaultGateway},
+			routeKind:     "HTTPRoute",
+			routeNN:       routeNN,
+			gatewayNN:     gatewayNN,
+			routeRuleName: new(gwapiv1.SectionName("rule-1")),
+			expected:      nil,
+		},
+		{
+			name: "rule BTP with MergeType set inherits gateway's RoutingType",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("Gateway"),
+									Name:  gwapiv1.ObjectName("gateway-1"),
+								},
+							},
+						},
+						RoutingType: &endpointRouting,
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-rule"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+								SectionName: new(gwapiv1.SectionName("rule-1")),
+							},
+						},
+						ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}},
+						MergeType:       new(egv1a1.StrategicMerge),
+					},
+				},
+			},
+			routes:        []client.Object{defaultHTTPRoute},
+			gateways:      []*GatewayContext{defaultGateway},
+			routeKind:     "HTTPRoute",
+			routeNN:       routeNN,
+			gatewayNN:     gatewayNN,
+			routeRuleName: new(gwapiv1.SectionName("rule-1")),
+			expected:      &endpointRouting,
+		},
+		{
+			name: "oldest accepted route-rule BTP with no RoutingType blocks a younger conflicting one, does not fall through to gateway",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("Gateway"),
+									Name:  gwapiv1.ObjectName("gateway-1"),
+								},
+							},
+						},
+						RoutingType: &serviceRouting,
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-rule-oldest-accepted"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+								SectionName: new(gwapiv1.SectionName("rule-1")),
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-rule-younger-conflicting"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+								SectionName: new(gwapiv1.SectionName("rule-1")),
+							},
+						},
+						RoutingType: &endpointRouting,
+					},
+				},
+			},
+			routes:        []client.Object{defaultHTTPRoute},
+			gateways:      []*GatewayContext{defaultGateway},
+			routeKind:     "HTTPRoute",
+			routeNN:       routeNN,
+			gatewayNN:     gatewayNN,
+			routeRuleName: new(gwapiv1.SectionName("rule-1")),
+			expected:      nil,
+		},
+		{
+			name: "oldest accepted route BTP with no RoutingType blocks a younger conflicting one, does not fall through to gateway",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("Gateway"),
+									Name:  gwapiv1.ObjectName("gateway-1"),
+								},
+							},
+						},
+						RoutingType: &serviceRouting,
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-route-oldest-accepted"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-route-younger-conflicting"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+							},
+						},
+						RoutingType: &endpointRouting,
+					},
+				},
+			},
+			routes:    []client.Object{defaultHTTPRoute},
+			gateways:  []*GatewayContext{defaultGateway},
+			routeKind: "HTTPRoute",
+			routeNN:   routeNN,
+			gatewayNN: gatewayNN,
+			expected:  nil,
+		},
+		{
+			name: "oldest accepted listener BTP with no RoutingType blocks a younger conflicting one, falls through to gateway",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("Gateway"),
+									Name:  gwapiv1.ObjectName("gateway-1"),
+								},
+							},
+						},
+						RoutingType: &endpointRouting,
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-listener-oldest-accepted"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("Gateway"),
+									Name:  gwapiv1.ObjectName("gateway-1"),
+								},
+								SectionName: new(gwapiv1.SectionName("http")),
+							},
+						},
+						ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-listener-younger-conflicting"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("Gateway"),
+									Name:  gwapiv1.ObjectName("gateway-1"),
+								},
+								SectionName: new(gwapiv1.SectionName("http")),
+							},
+						},
+						RoutingType: &endpointRouting,
+					},
+				},
+			},
+			gateways:     []*GatewayContext{defaultGateway},
+			routeKind:    "HTTPRoute",
+			routeNN:      types.NamespacedName{Namespace: "default", Name: "route-1"},
+			gatewayNN:    gatewayNN,
+			listenerName: new(gwapiv1.SectionName("http")),
+			expected:     &endpointRouting,
+		},
+		{
+			name: "oldest accepted gateway BTP with no RoutingType blocks a younger conflicting one",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway-oldest-accepted"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("Gateway"),
+									Name:  gwapiv1.ObjectName("gateway-1"),
+								},
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway-younger-conflicting"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("Gateway"),
+									Name:  gwapiv1.ObjectName("gateway-1"),
+								},
+							},
+						},
+						RoutingType: &endpointRouting,
+					},
+				},
+			},
+			gateways:  []*GatewayContext{defaultGateway},
+			routeKind: "HTTPRoute",
+			routeNN:   routeNN,
+			gatewayNN: gatewayNN,
+			expected:  nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1821,310 +2119,425 @@ func TestBTPRoutingTypeIndex(t *testing.T) {
 	}
 }
 
-func TestBTPRoutingTypeIndexMergeTypeUnsetDoesNotInherit(t *testing.T) {
+func TestBTPClusterSettingsIndex(t *testing.T) {
 	httpRoute := &gwapiv1.HTTPRoute{
 		TypeMeta:   metav1.TypeMeta{Kind: "HTTPRoute", APIVersion: "gateway.networking.k8s.io/v1"},
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "route-1"},
 	}
-	gateway := &GatewayContext{
-		Gateway: &gwapiv1.Gateway{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "gateway-1"}},
-	}
 	routeNN := types.NamespacedName{Namespace: "default", Name: "route-1"}
-	gatewayNN := types.NamespacedName{Namespace: "default", Name: "gateway-1"}
 	ruleName := gwapiv1.SectionName("rule-1")
-	endpoint := egv1a1.RoutingType("Endpoint")
+	ruleAName := gwapiv1.SectionName("rule-a")
+	ruleBName := gwapiv1.SectionName("rule-b")
 
-	gatewayBTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("Gateway"),
-						Name:  gwapiv1.ObjectName("gateway-1"),
+	tests := []struct {
+		name            string
+		btps            []*egv1a1.BackendTrafficPolicy
+		routes          []client.Object
+		gateways        []*GatewayContext
+		referenceGrants []*gwapiv1b1.ReferenceGrant
+		routeKind       gwapiv1.Kind
+		routeNN         types.NamespacedName
+		gatewayNN       types.NamespacedName
+		listenerName    *gwapiv1.SectionName
+		routeRuleName   *gwapiv1.SectionName
+		expected        bool
+	}{
+		{
+			// The index must be keyed by the target route's own namespace (route-ns), not the
+			// policy's namespace (policy-ns), or this lookup misses and MergeBackends wrongly
+			// shares a cluster with routes that don't carry this cluster-scoped policy.
+			name: "policy targeting route by selector in a different namespace is keyed by the route's own namespace",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "policy-ns", Name: "btp-selector"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetSelectors: []egv1a1.TargetSelector{
+								{
+									Kind:        gwapiv1.Kind("HTTPRoute"),
+									Namespaces:  &egv1a1.TargetSelectorNamespaces{From: egv1a1.TargetNamespaceFromAll},
+									MatchLabels: map[string]string{"app": "web"},
+								},
+							},
+						},
+						ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}},
 					},
 				},
 			},
-			RoutingType: &endpoint,
-		},
-	}
-	ruleBTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-rule"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("HTTPRoute"),
-						Name:  gwapiv1.ObjectName("route-1"),
-					},
-					SectionName: &ruleName,
+			routes: []client.Object{
+				&gwapiv1.HTTPRoute{
+					TypeMeta:   metav1.TypeMeta{Kind: "HTTPRoute", APIVersion: "gateway.networking.k8s.io/v1"},
+					ObjectMeta: metav1.ObjectMeta{Namespace: "route-ns", Name: "route-1", Labels: map[string]string{"app": "web"}},
 				},
 			},
-			ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}}, // sets a field, just not RoutingType; MergeType left nil.
+			referenceGrants: []*gwapiv1b1.ReferenceGrant{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "route-ns", Name: "grant-btp"},
+					Spec: gwapiv1b1.ReferenceGrantSpec{
+						From: []gwapiv1b1.ReferenceGrantFrom{
+							{
+								Group:     gwapiv1b1.Group(egv1a1.GroupVersion.Group),
+								Kind:      gwapiv1b1.Kind(egv1a1.KindBackendTrafficPolicy),
+								Namespace: gwapiv1b1.Namespace("policy-ns"),
+							},
+						},
+						To: []gwapiv1b1.ReferenceGrantTo{
+							{Group: gwapiv1b1.Group(gwapiv1.GroupName), Kind: gwapiv1b1.Kind("HTTPRoute")},
+						},
+					},
+				},
+			},
+			routeKind: "HTTPRoute",
+			routeNN:   types.NamespacedName{Namespace: "route-ns", Name: "route-1"},
+			expected:  true,
+		},
+		{
+			name: "rule-targeted BTP with MergeType unset disqualifies merging",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-no-mergetype"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+								SectionName: &ruleName,
+							},
+						},
+					},
+				},
+			},
+			routes:        []client.Object{httpRoute},
+			routeKind:     "HTTPRoute",
+			routeNN:       routeNN,
+			routeRuleName: &ruleName,
+			expected:      true,
+		},
+		{
+			name: "rule-targeted BTP with MergeType set does not disqualify merging",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-with-mergetype"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+								SectionName: &ruleName,
+							},
+						},
+						MergeType: new(egv1a1.StrategicMerge),
+					},
+				},
+			},
+			routes:        []client.Object{httpRoute},
+			routeKind:     "HTTPRoute",
+			routeNN:       routeNN,
+			routeRuleName: &ruleName,
+			expected:      false,
+		},
+		{
+			// processBackendTrafficPolicyForRoute applies the same MergeType branch to both
+			// rule-targeted and route-targeted policies.
+			name: "route-targeted BTP with MergeType unset disqualifies merging",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-route-no-mergetype"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			routes:    []client.Object{httpRoute},
+			routeKind: "HTTPRoute",
+			routeNN:   routeNN,
+			expected:  true,
+		},
+		{
+			name: "route-targeted BTP with MergeType set does not disqualify merging",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-route-with-mergetype"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+							},
+						},
+						MergeType: new(egv1a1.StrategicMerge),
+					},
+				},
+			},
+			routes:    []client.Object{httpRoute},
+			routeKind: "HTTPRoute",
+			routeNN:   routeNN,
+			expected:  false,
+		},
+		{
+			// MergeType is meaningless for a Gateway-targeted policy (never set for one in
+			// practice), so leaving it nil here must NOT trigger the disqualifying signal.
+			name: "Gateway-targeted BTP with MergeType nil does not disqualify merging",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("Gateway"),
+									Name:  gwapiv1.ObjectName("gateway-1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			gateways:  []*GatewayContext{{Gateway: &gwapiv1.Gateway{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "gateway-1"}}}},
+			routeKind: "HTTPRoute",
+			routeNN:   types.NamespacedName{Namespace: "default", Name: "route-1"},
+			gatewayNN: types.NamespacedName{Namespace: "default", Name: "gateway-1"},
+			expected:  false,
+		},
+		{
+			// rule-a has its own rule-level policy (MergeType set, no cluster-scoped field of its
+			// own) - the route-level policy's CircuitBreaker can never actually reach it.
+			name: "rule-level presence shields route-level: rule-a has its own policy",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-route"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+							},
+						},
+						ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-rule-a"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+								SectionName: &ruleAName,
+							},
+						},
+						MergeType: new(egv1a1.StrategicMerge),
+					},
+				},
+			},
+			routes:        []client.Object{httpRoute},
+			routeKind:     "HTTPRoute",
+			routeNN:       routeNN,
+			routeRuleName: &ruleAName,
+			expected:      false,
+		},
+		{
+			// rule-b has no rule-level policy of its own, so the route-level policy's
+			// CircuitBreaker genuinely applies to it - unchanged, correct, pre-existing behavior.
+			name: "rule-level presence shields route-level: rule-b has none, route-level still applies",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-route"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+							},
+						},
+						ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-rule-a"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+								SectionName: &ruleAName,
+							},
+						},
+						MergeType: new(egv1a1.StrategicMerge),
+					},
+				},
+			},
+			routes:        []client.Object{httpRoute},
+			routeKind:     "HTTPRoute",
+			routeNN:       routeNN,
+			routeRuleName: &ruleBName,
+			expected:      true,
+		},
+		{
+			name: "oldest accepted route-rule BTP with MergeType set and no cluster-scoped field blocks a younger conflicting one that sets one",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-rule-oldest-accepted"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+								SectionName: &ruleName,
+							},
+						},
+						MergeType: new(egv1a1.StrategicMerge),
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-rule-younger-conflicting"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+								SectionName: &ruleName,
+							},
+						},
+						ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}},
+					},
+				},
+			},
+			routes:        []client.Object{httpRoute},
+			routeKind:     "HTTPRoute",
+			routeNN:       routeNN,
+			routeRuleName: &ruleName,
+			expected:      false,
+		},
+		{
+			name: "oldest accepted route BTP with MergeType set and no cluster-scoped field blocks a younger conflicting one that sets one",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-route-oldest-accepted"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+							},
+						},
+						MergeType: new(egv1a1.StrategicMerge),
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-route-younger-conflicting"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("HTTPRoute"),
+									Name:  gwapiv1.ObjectName("route-1"),
+								},
+							},
+						},
+						ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}},
+					},
+				},
+			},
+			routes:    []client.Object{httpRoute},
+			routeKind: "HTTPRoute",
+			routeNN:   routeNN,
+			expected:  false,
+		},
+		{
+			name: "oldest accepted listener BTP with no cluster-scoped field blocks a younger conflicting one",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-oldest-accepted"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("Gateway"),
+									Name:  gwapiv1.ObjectName("gateway-1"),
+								},
+								SectionName: new(gwapiv1.SectionName("http")),
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-younger-conflicting"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+									Group: gwapiv1.Group("gateway.networking.k8s.io"),
+									Kind:  gwapiv1.Kind("Gateway"),
+									Name:  gwapiv1.ObjectName("gateway-1"),
+								},
+								SectionName: new(gwapiv1.SectionName("http")),
+							},
+						},
+						ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}},
+					},
+				},
+			},
+			gateways:     []*GatewayContext{{Gateway: &gwapiv1.Gateway{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "gateway-1"}}}},
+			routeKind:    "HTTPRoute",
+			routeNN:      types.NamespacedName{Namespace: "default", Name: "route-1"},
+			gatewayNN:    types.NamespacedName{Namespace: "default", Name: "gateway-1"},
+			listenerName: new(gwapiv1.SectionName("http")),
+			expected:     false,
 		},
 	}
 
-	idx := BuildBTPIndexes(
-		[]*egv1a1.BackendTrafficPolicy{gatewayBTP, ruleBTP},
-		[]client.Object{httpRoute}, []*GatewayContext{gateway}, nil, nil, true,
-	)
-
-	// The rule's own targeted policy has MergeType nil, so it never inherits the gateway's
-	// RoutingType, even though it doesn't set RoutingType itself.
-	require.Nil(t, idx.RoutingType.LookupBTPRoutingType("HTTPRoute", routeNN, gatewayNN, nil, &ruleName))
-	// The gateway's own RoutingType is unaffected and still resolves directly.
-	require.Equal(t, &endpoint, idx.RoutingType.LookupGatewayBTRoutingType(gatewayNN))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			idx := BuildBTPIndexes(tt.btps, tt.routes, tt.gateways, tt.referenceGrants, nil, true)
+			got := idx.ClusterSettings.HasRouteLevelClusterSettings(tt.routeKind, tt.routeNN, tt.gatewayNN, tt.listenerName, tt.routeRuleName)
+			require.Equal(t, tt.expected, got)
+		})
+	}
 }
 
-// TestBTPRoutingTypeIndexMergeTypeUnsetDoesNotInheritWhenMergeBackendsDisabled proves the fix
-// still applies when mergeBackendsEnabled is false, the common case for a cluster that hasn't
-// opted into MergeBackends at all.
-func TestBTPRoutingTypeIndexMergeTypeUnsetDoesNotInheritWhenMergeBackendsDisabled(t *testing.T) {
-	httpRoute := &gwapiv1.HTTPRoute{
-		TypeMeta:   metav1.TypeMeta{Kind: "HTTPRoute", APIVersion: "gateway.networking.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "route-1"},
-	}
-	gateway := &GatewayContext{
-		Gateway: &gwapiv1.Gateway{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "gateway-1"}},
-	}
-	routeNN := types.NamespacedName{Namespace: "default", Name: "route-1"}
-	gatewayNN := types.NamespacedName{Namespace: "default", Name: "gateway-1"}
-	ruleName := gwapiv1.SectionName("rule-1")
-	endpoint := egv1a1.RoutingType("Endpoint")
-
-	gatewayBTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("Gateway"),
-						Name:  gwapiv1.ObjectName("gateway-1"),
-					},
-				},
-			},
-			RoutingType: &endpoint,
-		},
-	}
-	ruleBTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-rule"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("HTTPRoute"),
-						Name:  gwapiv1.ObjectName("route-1"),
-					},
-					SectionName: &ruleName,
-				},
-			},
-			// Sets neither RoutingType nor any ClusterSettings field - MergeType left nil.
-		},
-	}
-
-	idx := BuildBTPIndexes(
-		[]*egv1a1.BackendTrafficPolicy{gatewayBTP, ruleBTP},
-		[]client.Object{httpRoute}, []*GatewayContext{gateway}, nil, nil, false, // mergeBackendsEnabled: false
-	)
-
-	require.Nil(t, idx.RoutingType.LookupBTPRoutingType("HTTPRoute", routeNN, gatewayNN, nil, &ruleName))
-	require.Equal(t, &endpoint, idx.RoutingType.LookupGatewayBTRoutingType(gatewayNN))
-}
-
-func TestBTPRoutingTypeIndexMergeTypeSetInherits(t *testing.T) {
-	httpRoute := &gwapiv1.HTTPRoute{
-		TypeMeta:   metav1.TypeMeta{Kind: "HTTPRoute", APIVersion: "gateway.networking.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "route-1"},
-	}
-	gateway := &GatewayContext{
-		Gateway: &gwapiv1.Gateway{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "gateway-1"}},
-	}
-	routeNN := types.NamespacedName{Namespace: "default", Name: "route-1"}
-	gatewayNN := types.NamespacedName{Namespace: "default", Name: "gateway-1"}
-	ruleName := gwapiv1.SectionName("rule-1")
-	endpoint := egv1a1.RoutingType("Endpoint")
-	strategicMerge := egv1a1.StrategicMerge
-
-	gatewayBTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("Gateway"),
-						Name:  gwapiv1.ObjectName("gateway-1"),
-					},
-				},
-			},
-			RoutingType: &endpoint,
-		},
-	}
-	ruleBTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-rule"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("HTTPRoute"),
-						Name:  gwapiv1.ObjectName("route-1"),
-					},
-					SectionName: &ruleName,
-				},
-			},
-			ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}},
-			MergeType:       &strategicMerge,
-		},
-	}
-
-	idx := BuildBTPIndexes(
-		[]*egv1a1.BackendTrafficPolicy{gatewayBTP, ruleBTP},
-		[]client.Object{httpRoute}, []*GatewayContext{gateway}, nil, nil, true,
-	)
-
-	// MergeType set and no RoutingType of its own - the rule correctly inherits the gateway's.
-	require.Equal(t, &endpoint, idx.RoutingType.LookupBTPRoutingType("HTTPRoute", routeNN, gatewayNN, nil, &ruleName))
-}
-
-// TestBTPRoutingTypeIndexOldestGatewayPolicyWins proves an unconditional gateway-level write
-// closes the conflicting-policy gap: gateway has no parent an unset value could wrongly block.
-func TestBTPRoutingTypeIndexOldestGatewayPolicyWins(t *testing.T) {
-	gateway := &GatewayContext{
-		Gateway: &gwapiv1.Gateway{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "gateway-1"}},
-	}
-	gatewayNN := types.NamespacedName{Namespace: "default", Name: "gateway-1"}
-	endpoint := egv1a1.RoutingType("Endpoint")
-
-	oldestAcceptedGatewayBTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway-oldest-accepted"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("Gateway"),
-						Name:  gwapiv1.ObjectName("gateway-1"),
-					},
-				},
-			},
-			// Sets no RoutingType - this is the accepted (oldest) policy for this gateway.
-			ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}},
-		},
-	}
-	youngerConflictingGatewayBTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway-younger-conflicting"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("Gateway"),
-						Name:  gwapiv1.ObjectName("gateway-1"),
-					},
-				},
-			},
-			RoutingType: &endpoint,
-		},
-	}
-
-	// Passed oldest-first, mirroring the real, provider-sorted input order BuildBTPIndexes
-	// actually receives - it does not sort internally.
-	idx := BuildBTPIndexes(
-		[]*egv1a1.BackendTrafficPolicy{oldestAcceptedGatewayBTP, youngerConflictingGatewayBTP},
-		nil, []*GatewayContext{gateway}, nil, nil, true,
-	)
-
-	// The accepted (oldest) gateway policy sets no RoutingType, so the resolved answer must stay
-	// nil - a younger, conflicting policy that does set RoutingType must not override it.
-	require.Nil(t, idx.RoutingType.LookupGatewayBTRoutingType(gatewayNN))
-	require.Nil(t, idx.RoutingType.LookupBTPRoutingType(
-		"HTTPRoute", types.NamespacedName{Namespace: "default", Name: "route-1"}, gatewayNN, nil, nil,
-	))
-}
-
-// TestBTPRoutingTypeIndexOldestListenerPolicyWins proves the same conflicting-policy gap is closed
-// at the listener level, even though a listener entry here must still fall through to gateway when
-// the claiming policy doesn't set RoutingType.
-func TestBTPRoutingTypeIndexOldestListenerPolicyWins(t *testing.T) {
-	gateway := &GatewayContext{
-		Gateway: &gwapiv1.Gateway{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "gateway-1"}},
-	}
-	gatewayNN := types.NamespacedName{Namespace: "default", Name: "gateway-1"}
-	listenerName := gwapiv1.SectionName("http")
-	endpoint := egv1a1.RoutingType("Endpoint")
-
-	gatewayBTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("Gateway"),
-						Name:  gwapiv1.ObjectName("gateway-1"),
-					},
-				},
-			},
-			RoutingType: &endpoint,
-		},
-	}
-	oldestAcceptedListenerBTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-listener-oldest-accepted"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("Gateway"),
-						Name:  gwapiv1.ObjectName("gateway-1"),
-					},
-					SectionName: &listenerName,
-				},
-			},
-			// Sets no RoutingType - this is the accepted (oldest) policy for this listener.
-			ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}},
-		},
-	}
-	youngerConflictingListenerBTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-listener-younger-conflicting"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("Gateway"),
-						Name:  gwapiv1.ObjectName("gateway-1"),
-					},
-					SectionName: &listenerName,
-				},
-			},
-			RoutingType: &endpoint,
-		},
-	}
-
-	// Passed oldest-first, mirroring the real, provider-sorted input order BuildBTPIndexes
-	// actually receives - it does not sort internally.
-	idx := BuildBTPIndexes(
-		[]*egv1a1.BackendTrafficPolicy{gatewayBTP, oldestAcceptedListenerBTP, youngerConflictingListenerBTP},
-		nil, []*GatewayContext{gateway}, nil, nil, true,
-	)
-
-	// The accepted (oldest) listener policy sets no RoutingType, so it must fall through to the
-	// gateway's - a younger, conflicting policy that does set RoutingType must not override it.
-	require.Equal(t, &endpoint, idx.RoutingType.LookupBTPRoutingType(
-		"HTTPRoute", types.NamespacedName{Namespace: "default", Name: "route-1"}, gatewayNN, &listenerName, nil,
-	))
-}
-
-// TestBTPLoadBalancerIndexIsConsistentHash covers only the gateway level: a route-rule/route/
-// listener-level LoadBalancer setting already disqualifies its rule from cluster merging, so
-// BTPLoadBalancerIndex doesn't track those levels.
-func TestBTPLoadBalancerIndexIsConsistentHash(t *testing.T) {
+func TestBTPLoadBalancerIndex(t *testing.T) {
 	consistentHashType := egv1a1.ConsistentHashLoadBalancerType
 	roundRobinType := egv1a1.RoundRobinLoadBalancerType
 
@@ -2262,6 +2675,51 @@ func TestBTPLoadBalancerIndexIsConsistentHash(t *testing.T) {
 			gatewayNN: types.NamespacedName{Namespace: "gateway-ns", Name: "gateway-1"},
 			want:      true,
 		},
+		{
+			name: "oldest accepted gateway BTP with RoundRobin blocks a younger conflicting one with ConsistentHash",
+			btps: []*egv1a1.BackendTrafficPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "envoy-gateway", Name: "btp-oldest-accepted"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRefs: []gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								{
+									LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+										Group: "gateway.networking.k8s.io",
+										Kind:  "Gateway",
+										Name:  "gateway-1",
+									},
+								},
+							},
+						},
+						ClusterSettings: egv1a1.ClusterSettings{
+							LoadBalancer: &egv1a1.LoadBalancer{Type: roundRobinType},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "envoy-gateway", Name: "btp-younger-conflicting"},
+					Spec: egv1a1.BackendTrafficPolicySpec{
+						PolicyTargetReferences: egv1a1.PolicyTargetReferences{
+							TargetRefs: []gwapiv1.LocalPolicyTargetReferenceWithSectionName{
+								{
+									LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
+										Group: "gateway.networking.k8s.io",
+										Kind:  "Gateway",
+										Name:  "gateway-1",
+									},
+								},
+							},
+						},
+						ClusterSettings: egv1a1.ClusterSettings{
+							LoadBalancer: &egv1a1.LoadBalancer{Type: consistentHashType},
+						},
+					},
+				},
+			},
+			gatewayNN: types.NamespacedName{Namespace: "envoy-gateway", Name: "gateway-1"},
+			want:      false,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2322,319 +2780,6 @@ func TestBtpSpecHasClusterScopedFields(t *testing.T) {
 	}
 }
 
-func TestBuildBTPClusterSettingsIndexCrossNamespace(t *testing.T) {
-	circuitBreaker := &egv1a1.CircuitBreaker{}
-
-	btps := []*egv1a1.BackendTrafficPolicy{
-		{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "policy-ns", Name: "btp-selector"},
-			Spec: egv1a1.BackendTrafficPolicySpec{
-				PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-					TargetSelectors: []egv1a1.TargetSelector{
-						{
-							Kind:        gwapiv1.Kind("HTTPRoute"),
-							Namespaces:  &egv1a1.TargetSelectorNamespaces{From: egv1a1.TargetNamespaceFromAll},
-							MatchLabels: map[string]string{"app": "web"},
-						},
-					},
-				},
-				ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: circuitBreaker},
-			},
-		},
-	}
-	routes := []client.Object{
-		&gwapiv1.HTTPRoute{
-			TypeMeta:   metav1.TypeMeta{Kind: "HTTPRoute", APIVersion: "gateway.networking.k8s.io/v1"},
-			ObjectMeta: metav1.ObjectMeta{Namespace: "route-ns", Name: "route-1", Labels: map[string]string{"app": "web"}},
-		},
-	}
-	referenceGrants := []*gwapiv1b1.ReferenceGrant{
-		{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "route-ns", Name: "grant-btp"},
-			Spec: gwapiv1b1.ReferenceGrantSpec{
-				From: []gwapiv1b1.ReferenceGrantFrom{
-					{
-						Group:     gwapiv1b1.Group(egv1a1.GroupVersion.Group),
-						Kind:      gwapiv1b1.Kind(egv1a1.KindBackendTrafficPolicy),
-						Namespace: gwapiv1b1.Namespace("policy-ns"),
-					},
-				},
-				To: []gwapiv1b1.ReferenceGrantTo{
-					{Group: gwapiv1b1.Group(gwapiv1.GroupName), Kind: gwapiv1b1.Kind("HTTPRoute")},
-				},
-			},
-		},
-	}
-
-	idx := BuildBTPIndexes(btps, routes, nil, referenceGrants, nil, true)
-
-	// The index must be keyed by the target route's own namespace (route-ns), not the
-	// policy's namespace (policy-ns), or this lookup misses and MergeBackends wrongly
-	// shares a cluster with routes that don't carry this cluster-scoped policy.
-	require.True(t, idx.ClusterSettings.HasRouteLevelClusterSettings(
-		"HTTPRoute",
-		types.NamespacedName{Namespace: "route-ns", Name: "route-1"},
-		types.NamespacedName{},
-		nil,
-		nil,
-	))
-}
-
-func TestBuildBTPClusterSettingsIndexMergeTypeUnset(t *testing.T) {
-	httpRoute := &gwapiv1.HTTPRoute{
-		TypeMeta:   metav1.TypeMeta{Kind: "HTTPRoute", APIVersion: "gateway.networking.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "route-1"},
-	}
-	routeNN := types.NamespacedName{Namespace: "default", Name: "route-1"}
-	ruleName := gwapiv1.SectionName("rule-1")
-
-	newRuleTargetedBTP := func(name string, mergeType *egv1a1.MergeType) *egv1a1.BackendTrafficPolicy {
-		return &egv1a1.BackendTrafficPolicy{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: name},
-			Spec: egv1a1.BackendTrafficPolicySpec{
-				PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-					TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-						LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-							Group: gwapiv1.Group("gateway.networking.k8s.io"),
-							Kind:  gwapiv1.Kind("HTTPRoute"),
-							Name:  gwapiv1.ObjectName("route-1"),
-						},
-						SectionName: &ruleName,
-					},
-				},
-				MergeType: mergeType,
-			},
-		}
-	}
-
-	tests := []struct {
-		name string
-		btp  *egv1a1.BackendTrafficPolicy
-		want bool
-	}{
-		{
-			name: "rule-targeted BTP with MergeType unset disqualifies merging",
-			btp:  newRuleTargetedBTP("btp-no-mergetype", nil),
-			want: true,
-		},
-		{
-			name: "rule-targeted BTP with MergeType set does not disqualify merging",
-			btp:  newRuleTargetedBTP("btp-with-mergetype", new(egv1a1.StrategicMerge)),
-			want: false,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			idx := BuildBTPIndexes([]*egv1a1.BackendTrafficPolicy{tc.btp}, []client.Object{httpRoute}, nil, nil, nil, true)
-			require.Equal(t, tc.want, idx.ClusterSettings.HasRouteLevelClusterSettings(
-				"HTTPRoute", routeNN, types.NamespacedName{}, nil, &ruleName,
-			))
-		})
-	}
-}
-
-// TestBuildBTPClusterSettingsIndexRouteLevelMergeTypeUnset mirrors
-// TestBuildBTPClusterSettingsIndexMergeTypeUnset but for a route-targeted (not rule-targeted)
-// policy - processBackendTrafficPolicyForRoute applies the same MergeType branch to both.
-func TestBuildBTPClusterSettingsIndexRouteLevelMergeTypeUnset(t *testing.T) {
-	httpRoute := &gwapiv1.HTTPRoute{
-		TypeMeta:   metav1.TypeMeta{Kind: "HTTPRoute", APIVersion: "gateway.networking.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "route-1"},
-	}
-	routeNN := types.NamespacedName{Namespace: "default", Name: "route-1"}
-
-	newRouteTargetedBTP := func(name string, mergeType *egv1a1.MergeType) *egv1a1.BackendTrafficPolicy {
-		return &egv1a1.BackendTrafficPolicy{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: name},
-			Spec: egv1a1.BackendTrafficPolicySpec{
-				PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-					TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-						LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-							Group: gwapiv1.Group("gateway.networking.k8s.io"),
-							Kind:  gwapiv1.Kind("HTTPRoute"),
-							Name:  gwapiv1.ObjectName("route-1"),
-						},
-					},
-				},
-				MergeType: mergeType,
-			},
-		}
-	}
-
-	tests := []struct {
-		name string
-		btp  *egv1a1.BackendTrafficPolicy
-		want bool
-	}{
-		{
-			name: "route-targeted BTP with MergeType unset disqualifies merging",
-			btp:  newRouteTargetedBTP("btp-route-no-mergetype", nil),
-			want: true,
-		},
-		{
-			name: "route-targeted BTP with MergeType set does not disqualify merging",
-			btp:  newRouteTargetedBTP("btp-route-with-mergetype", new(egv1a1.StrategicMerge)),
-			want: false,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			idx := BuildBTPIndexes([]*egv1a1.BackendTrafficPolicy{tc.btp}, []client.Object{httpRoute}, nil, nil, nil, true)
-			require.Equal(t, tc.want, idx.ClusterSettings.HasRouteLevelClusterSettings(
-				"HTTPRoute", routeNN, types.NamespacedName{}, nil, nil,
-			))
-		})
-	}
-}
-
-func TestBuildBTPClusterSettingsIndexGatewayTargetIgnoresMergeType(t *testing.T) {
-	gateway := &GatewayContext{
-		Gateway: &gwapiv1.Gateway{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "gateway-1"}},
-	}
-	gatewayNN := types.NamespacedName{Namespace: "default", Name: "gateway-1"}
-
-	btp := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-gateway"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("Gateway"),
-						Name:  gwapiv1.ObjectName("gateway-1"),
-					},
-				},
-			},
-			// MergeType left nil - this must NOT trigger the new signal, since MergeType is
-			// meaningless for a Gateway-targeted policy (never set for one in practice).
-		},
-	}
-
-	idx := BuildBTPIndexes([]*egv1a1.BackendTrafficPolicy{btp}, nil, []*GatewayContext{gateway}, nil, nil, true)
-
-	require.False(t, idx.ClusterSettings.HasRouteLevelClusterSettings(
-		"HTTPRoute", types.NamespacedName{Namespace: "default", Name: "route-1"}, gatewayNN, nil, nil,
-	))
-}
-
-func TestBuildBTPClusterSettingsIndexRuleLevelShieldsRouteLevel(t *testing.T) {
-	httpRoute := &gwapiv1.HTTPRoute{
-		TypeMeta:   metav1.TypeMeta{Kind: "HTTPRoute", APIVersion: "gateway.networking.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "route-1"},
-	}
-	routeNN := types.NamespacedName{Namespace: "default", Name: "route-1"}
-	ruleAName := gwapiv1.SectionName("rule-a")
-	ruleBName := gwapiv1.SectionName("rule-b")
-
-	routeLevelBTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-route"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("HTTPRoute"),
-						Name:  gwapiv1.ObjectName("route-1"),
-					},
-				},
-			},
-			ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}},
-		},
-	}
-	ruleABTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-rule-a"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("HTTPRoute"),
-						Name:  gwapiv1.ObjectName("route-1"),
-					},
-					SectionName: &ruleAName,
-				},
-			},
-			MergeType: new(egv1a1.StrategicMerge),
-		},
-	}
-
-	idx := BuildBTPIndexes(
-		[]*egv1a1.BackendTrafficPolicy{routeLevelBTP, ruleABTP},
-		[]client.Object{httpRoute}, nil, nil, nil, true,
-	)
-
-	// rule-a has its own rule-level policy (MergeType set, no cluster-scoped field of its own) -
-	// the route-level policy's CircuitBreaker can never actually reach it.
-	require.False(t, idx.ClusterSettings.HasRouteLevelClusterSettings(
-		"HTTPRoute", routeNN, types.NamespacedName{}, nil, &ruleAName,
-	))
-	// rule-b has no rule-level policy of its own, so the route-level policy's CircuitBreaker
-	// genuinely applies to it - unchanged, correct, pre-existing behavior.
-	require.True(t, idx.ClusterSettings.HasRouteLevelClusterSettings(
-		"HTTPRoute", routeNN, types.NamespacedName{}, nil, &ruleBName,
-	))
-}
-
-// TestBuildBTPClusterSettingsIndexOldestListenerPolicyWins proves the listener-level population
-// fix. BuildBTPIndexes has no way to read a BackendTrafficPolicy's accepted/conflicted status -
-// that resolution happens later, in ProcessBackendTrafficPolicies - so it relies entirely on btps
-// being supplied oldest-first (the provider layer's Sort() guarantee) and on recording every
-// listener-targeting policy's own value unconditionally, so the oldest one always claims the slot
-// before a younger, to-be-Conflicted policy targeting the same listener ever gets a chance to.
-func TestBuildBTPClusterSettingsIndexOldestListenerPolicyWins(t *testing.T) {
-	gateway := &GatewayContext{
-		Gateway: &gwapiv1.Gateway{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "gateway-1"}},
-	}
-	gatewayNN := types.NamespacedName{Namespace: "default", Name: "gateway-1"}
-	listenerName := gwapiv1.SectionName("http")
-
-	oldestAcceptedBTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-oldest-accepted"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("Gateway"),
-						Name:  gwapiv1.ObjectName("gateway-1"),
-					},
-					SectionName: &listenerName,
-				},
-			},
-			// Sets no cluster-scoped field - this is the accepted (oldest) policy for this listener.
-		},
-	}
-	youngerConflictingBTP := &egv1a1.BackendTrafficPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "btp-younger-conflicting"},
-		Spec: egv1a1.BackendTrafficPolicySpec{
-			PolicyTargetReferences: egv1a1.PolicyTargetReferences{
-				TargetRef: &gwapiv1.LocalPolicyTargetReferenceWithSectionName{
-					LocalPolicyTargetReference: gwapiv1.LocalPolicyTargetReference{
-						Group: gwapiv1.Group("gateway.networking.k8s.io"),
-						Kind:  gwapiv1.Kind("Gateway"),
-						Name:  gwapiv1.ObjectName("gateway-1"),
-					},
-					SectionName: &listenerName,
-				},
-			},
-			ClusterSettings: egv1a1.ClusterSettings{CircuitBreaker: &egv1a1.CircuitBreaker{}},
-		},
-	}
-
-	// Passed oldest-first, mirroring the real, provider-sorted input order BuildBTPIndexes
-	// actually receives - it does not sort internally.
-	idx := BuildBTPIndexes(
-		[]*egv1a1.BackendTrafficPolicy{oldestAcceptedBTP, youngerConflictingBTP},
-		nil, []*GatewayContext{gateway}, nil, nil, true,
-	)
-
-	require.False(t, idx.ClusterSettings.HasRouteLevelClusterSettings(
-		"HTTPRoute", types.NamespacedName{Namespace: "default", Name: "route-1"}, gatewayNN, &listenerName, nil,
-	), "the accepted (oldest) listener policy sets nothing - a younger, conflicting policy that does set a field must not be able to override it")
-}
-
-// TestBtpSpecHasClusterScopedFieldsExhaustive locks in today's field-by-field classification for
-// btpSpecHasClusterScopedFields, so a new field must be explicitly classified here too.
 func TestBtpSpecHasClusterScopedFieldsExhaustive(t *testing.T) {
 	expected := map[string]bool{
 		"LoadBalancer":      true,
